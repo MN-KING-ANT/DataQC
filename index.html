@@ -16,7 +16,7 @@
           <span class="bg-blue-600 text-white px-2.5 py-1 rounded-md text-sm font-extrabold">QC</span>
           설문 Rawdata 로직 검증기
         </h1>
-        <p class="text-xs text-slate-500 mt-0.5">Exclusive 자동 감지 고도화 (오탐률 최소화) 반영 버젼</p>
+        <p class="text-xs text-slate-500 mt-0.5">범위 수식(e4_a-l>=4) · Multi-Open · Ranking · Exclusive 자동 검증</p>
       </div>
       <div class="flex items-center gap-3">
         <button id="btnDownloadReport" onclick="exportErrorReport()" class="hidden bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-medium px-4 py-2 rounded-lg shadow-sm transition">오류 리포트 다운로드 (.xlsx)</button>
@@ -179,7 +179,6 @@
             if (section === "ROWS" && r.colA) gridItems.push({ code: r.colA, label: r.colB, base: r.colC ? r.colC.replace(/^base\s*:\s*/i, "") : "All" });
             else if (section === "COLS" && r.colA) {
               validCodes.push(r.colA);
-              // [수정점] 정교해진 배타성 감지어 적용
               if (/없음|모름|해당\s*사항|기억\s*안\s*남|기억나지\s*않음|응답하고\s*싶지\s*않음|확인하지\s*않음|찾아보지\s*않음/i.test(r.colB)) exclusiveCodes.push(String(r.colA));
             }
           });
@@ -193,17 +192,20 @@
             });
           });
         } else {
-          let baseExpr = "All", validCodes = [], exclusiveCodes = [];
+          let baseParts = [], validCodes = [], exclusiveCodes = [];
           block.subRows.forEach((r, idx) => {
-            if (idx === 0 && r.colC && /^base\s*:/i.test(r.colC)) baseExpr = r.colC.replace(/^base\s*:\s*/i, "");
+            if (r.colC) {
+              if (idx === 0 && /^base\s*:/i.test(r.colC)) baseParts.push(r.colC.replace(/^base\s*:\s*/i, "").trim());
+              else if (idx > 0 && /^(&|\||and\b|or\b)/i.test(r.colC.trim())) baseParts.push(r.colC.trim());
+            }
             if (r.colA) {
               validCodes.push(r.colA);
-              // [수정점] 정교해진 배타성 감지어 적용
               if (/없음|모름|해당\s*사항|기억\s*안\s*남|기억나지\s*않음|응답하고\s*싶지\s*않음|확인하지\s*않음|찾아보지\s*않음/i.test(r.colB)) exclusiveCodes.push(String(r.colA));
             }
           });
+          const baseExpr = baseParts.join(" ") || "All";
           let detectedType = isRanking ? "RANKING" : (isMulti ? "MULTI" : (isOpen ? "OPEN" : "SINGLE"));
-          parsedRules.push({ ruleId: block.varName, parentVar: block.varName, qType: detectedType, qTypeRaw: block.qTypeRaw, baseExpr: baseExpr || "All", isOpen: isOpen, validCodes, exclusiveCodes, label: block.questionText.replace(/\r?\n/g, " ") });
+          parsedRules.push({ ruleId: block.varName, parentVar: block.varName, qType: detectedType, qTypeRaw: block.qTypeRaw, baseExpr, isOpen: isOpen, validCodes, exclusiveCodes, label: block.questionText.replace(/\r?\n/g, " ") });
         }
       });
     }
@@ -247,8 +249,43 @@
       const v = varName.toLowerCase().trim();
       if (!variableValueCache[v]) {
         let vars = [v];
-        const rm = v.match(/^([a-z0-9_]+)_?([a-z])-([a-z])$/i);
-        if (rm) { vars = []; for (let i = rm[2].charCodeAt(0); i <= rm[3].charCodeAt(0); i++) { vars.push(`${rm[1]}${String.fromCharCode(i)}`); vars.push(`${rm[1]}_${String.fromCharCode(i)}`); } }
+        // 1) 알파벳 범위 (예: e4_a-l, e4a-l, c16a-p, e52b_a-p) - 언더바 자동 제거 후 매칭
+        const rmAlpha = v.match(/^([a-z0-9_]+?)_?([a-z])-([a-z])$/i);
+        // 2) 숫자 범위 (예: c17a_1-13, c17a1-13)
+        const rmNum = !rmAlpha ? v.match(/^([a-z0-9_]+?)_?(\d+)-(\d+)$/i) : null;
+
+        if (rmAlpha) {
+          vars = [];
+          const base = rmAlpha[1].replace(/_+$/, "");
+          for (let i = rmAlpha[2].charCodeAt(0); i <= rmAlpha[3].charCodeAt(0); i++) {
+            const ch = String.fromCharCode(i);
+            vars.push(`${base}${ch}`);
+            vars.push(`${base}_${ch}`);
+          }
+        } else if (rmNum) {
+          vars = [];
+          const base = rmNum[1].replace(/_+$/, "");
+          for (let k = Number(rmNum[2]); k <= Number(rmNum[3]); k++) {
+            vars.push(`${base}${k}`);
+            vars.push(`${base}_${k}`);
+          }
+        } else {
+          // 3) 범위 없이 그리드 부모 변수명만 적은 경우 (예: e4>=4, c17>=4) 하위 그리드 행 자동 확장
+          const gridChildren = parsedRules.filter(r =>
+            (r.qType === "GRID_SINGLE" || r.qType === "GRID_MULTI") &&
+            (r.parentVar.toLowerCase() === v || (v === "c17" && r.parentVar.toLowerCase() === "c17a"))
+          );
+          if (gridChildren.length > 0) {
+            vars = [];
+            gridChildren.forEach(gc => {
+              const rc = gc.rowCode.toLowerCase().trim();
+              const pv = gc.parentVar.toLowerCase().trim();
+              vars.push(`${pv}${rc}`);
+              vars.push(`${pv}_${rc}`);
+            });
+          }
+        }
+
         let ex = [], rk = [], sub = [];
         vars.forEach(vc => {
           if (lowerHeaderMap[vc]) ex.push(lowerHeaderMap[vc]);
@@ -269,15 +306,28 @@
       if (!baseExpr || baseExpr.toLowerCase() === "all") return { passed: true, refSummary: "Base: All" };
       const refVars = new Set();
       const js = baseExpr.replace(/\bAND\b/gi, "&&").replace(/\bOR\b/gi, "||").replace(/&+/g, "&&").replace(/\|+/g, "||")
-        .replace(/([a-zA-Z0-9_.\-]+)\s*(‡|≠|!=|<>|>=|<=|>|<|=)\s*([0-9,\-\sA-Za-z]+)/g, (m, v, op, rhs) => {
+        .replace(/([a-zA-Z0-9_.\-]+)\s*(‡|≠|!=|<>|>=|<=|>|<|=)\s*([0-9,\-\s]+)(\(\s*모두\s*선택\s*\))?/g, (m, v, op, rhs, allMod) => {
           refVars.add(v); const vals = getRespVals(row, v), tgts = [];
           rhs.split(",").forEach(p => { const r = p.trim().match(/^(\d+)\s*-\s*(\d+)$/); if (r) { for (let k = Number(r[1]); k <= Number(r[2]); k++) tgts.push(String(k)); } else if (p.trim()) tgts.push(p.trim()); });
+          
+          // (모두 선택) 조건 처리 (예: b1a‡1-16(모두 선택))
+          if (allMod) {
+            const matchedCount = tgts.filter(t => vals.includes(String(t))).length;
+            if (["≠", "!=", "<>", "‡"].includes(op)) return matchedCount < tgts.length ? "true" : "false";
+            if (op === "=") return matchedCount === tgts.length ? "true" : "false";
+          }
+
           if (op === "=") return vals.some(x => tgts.includes(String(x))) ? "true" : "false";
           if (["≠", "!=", "<>", "‡"].includes(op)) return !vals.some(x => tgts.includes(String(x))) ? "true" : "false";
-          const nt = Number(rhs.trim()), na = vals.length ? Number(vals[0]) : NaN;
-          if (isNaN(na)) return "false";
-          if (op === ">=") return na >= nt ? "true" : "false"; if (op === "<=") return na <= nt ? "true" : "false";
-          if (op === ">") return na > nt ? "true" : "false"; if (op === "<") return na < nt ? "true" : "false";
+          
+          // 다중 컬럼/그리드 대소 비교: 응답값 중 하나라도 조건(>=, <=, >, <)을 만족하면 true
+          const nt = Number(rhs.trim());
+          const numVals = vals.map(x => Number(x)).filter(x => !isNaN(x));
+          if (!numVals.length || isNaN(nt)) return "false";
+          if (op === ">=") return numVals.some(na => na >= nt) ? "true" : "false";
+          if (op === "<=") return numVals.some(na => na <= nt) ? "true" : "false";
+          if (op === ">") return numVals.some(na => na > nt) ? "true" : "false";
+          if (op === "<") return numVals.some(na => na < nt) ? "true" : "false";
           return "true";
         });
       let passed = true; try { passed = Boolean(Function(`"use strict"; return (${js});`)()); } catch(e){}
