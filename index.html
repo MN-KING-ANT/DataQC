@@ -16,7 +16,7 @@
           <span class="bg-blue-600 text-white px-2.5 py-1 rounded-md text-sm font-extrabold">QC</span>
           설문 Rawdata 로직 검증기
         </h1>
-        <p class="text-xs text-slate-500 mt-0.5">Ranking 구조(옵션 선택 + fst/snd/trd) 대조 호환 완비 및 예외 처리 반영</p>
+        <p class="text-xs text-slate-500 mt-0.5">Open 텍스트 응답 호환 및 Exclusive(없음/모름) 중복 체크 자동 검증 완비</p>
       </div>
       <div class="flex items-center gap-3">
         <button id="btnDownloadReport" onclick="exportErrorReport()" class="hidden bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-medium px-4 py-2 rounded-lg shadow-sm transition">오류 리포트 다운로드 (.xlsx)</button>
@@ -76,6 +76,7 @@
             <option value="SKIP_ERROR">스킵 위반</option>
             <option value="OUT_OF_RANGE">유효 범위 위반</option>
             <option value="RANK_MISMATCH">순위 불일치</option>
+            <option value="EXCLUSIVE_ERROR">배타성 중복 위반</option>
             <option value="COL_NOT_FOUND">컬럼 미매칭</option>
           </select>
           <input type="text" id="filterSearch" oninput="renderErrorTable()" placeholder="검색..." class="text-xs border border-slate-300 rounded-lg px-3 py-2 w-72" />
@@ -170,13 +171,16 @@
         const isRanking = qLow.includes("rank") || qLow.includes("순위");
 
         if (isGrid) {
-          let section = "NONE", gridBase = "All", gridItems = [], validCodes = [];
+          let section = "NONE", gridBase = "All", gridItems = [], validCodes = [], exclusiveCodes = [];
           block.subRows.forEach(r => {
             const bLow = r.colB.toLowerCase().trim();
             if (r.colA === "" && bLow === "rows") { section = "ROWS"; if (r.colC) gridBase = r.colC.replace(/^base\s*:\s*/i, ""); return; }
             if (r.colA === "" && (bLow === "columns" || bLow === "cloumns")) { section = "COLS"; return; }
             if (section === "ROWS" && r.colA) gridItems.push({ code: r.colA, label: r.colB, base: r.colC ? r.colC.replace(/^base\s*:\s*/i, "") : "All" });
-            else if (section === "COLS" && r.colA) validCodes.push(r.colA);
+            else if (section === "COLS" && r.colA) {
+              validCodes.push(r.colA);
+              if (/없음|모름|해당\s*사항|않음|기억\s*안\s*남/i.test(r.colB)) exclusiveCodes.push(String(r.colA));
+            }
           });
           gridItems.forEach((item, idx) => {
             const b1 = (!gridBase || gridBase.toLowerCase() === "all") ? null : gridBase;
@@ -184,17 +188,21 @@
             parsedRules.push({
               ruleId: `${block.varName}${item.code}`, parentVar: block.varName, rowCode: item.code, rowIndex: idx + 1,
               qType: isMulti ? "GRID_MULTI" : "GRID_SINGLE", qTypeRaw: block.qTypeRaw, baseExpr: (b1 && b2) ? `(${b1}) & (${b2})` : (b1 || b2 || "All"),
-              validCodes: [...validCodes], label: `[${item.code}] ${item.label}`
+              validCodes: [...validCodes], exclusiveCodes: [...exclusiveCodes], label: `[${item.code}] ${item.label}`
             });
           });
         } else {
-          let baseExpr = "All", validCodes = [];
+          let baseExpr = "All", validCodes = [], exclusiveCodes = [];
           block.subRows.forEach((r, idx) => {
             if (idx === 0 && r.colC && /^base\s*:/i.test(r.colC)) baseExpr = r.colC.replace(/^base\s*:\s*/i, "");
-            if (r.colA) validCodes.push(r.colA);
+            if (r.colA) {
+              validCodes.push(r.colA);
+              // "없음", "모름" 등의 키워드가 포함된 보기는 Exclusive로 자동 지정
+              if (/없음|모름|해당\s*사항|않음|기억\s*안\s*남/i.test(r.colB)) exclusiveCodes.push(String(r.colA));
+            }
           });
           let detectedType = isOpen ? "OPEN" : (isRanking ? "RANKING" : (isMulti ? "MULTI" : "SINGLE"));
-          parsedRules.push({ ruleId: block.varName, parentVar: block.varName, qType: detectedType, qTypeRaw: block.qTypeRaw, baseExpr: baseExpr || "All", validCodes, label: block.questionText.replace(/\r?\n/g, " ") });
+          parsedRules.push({ ruleId: block.varName, parentVar: block.varName, qType: detectedType, qTypeRaw: block.qTypeRaw, baseExpr: baseExpr || "All", validCodes, exclusiveCodes, label: block.questionText.replace(/\r?\n/g, " ") });
         }
       });
     }
@@ -304,14 +312,25 @@
             rule.matchedCols.forEach(c => {
               const val = String(row[c] ?? "").trim(); if (!val || val === "0") return;
               const sf = c.trim().match(/_(\d+)$/);
+              // OPEN 문항이면서 텍스트가 적혀 있으면 해당 서픽스를 선택(sel)된 것으로 정상 처리
               if (sf) { if (val === "1" || val === sf[1] || rule.qType === "OPEN") sel.push(sf[1]); else inv.push(`${c}=${val}`); }
               else sel.push(val);
             });
             const colLbl = rule.matchedCols.length > 3 ? `${rule.matchedCols[0]}~${rule.matchedCols.length}개` : rule.matchedCols.join(",");
+            
             if (isBase) {
-              if (!sel.length && !inv.length) { validationErrors.push({ respId, ruleId: rule.ruleId, rawCol: colLbl, errorType: "MISSING", baseExpr: rule.baseExpr, actualVal: "(선택 없음)", validCodes: rule.validCodes.join(","), refSummary }); errSet.add(respId); }
-              if (inv.length && rule.qType !== "OPEN") { validationErrors.push({ respId, ruleId: rule.ruleId, rawCol: colLbl, errorType: "OUT_OF_RANGE", baseExpr: rule.baseExpr, actualVal: inv.join(","), validCodes: "0, 1 (또는 코드)", refSummary }); errSet.add(respId); }
-            } else if (sel.length || inv.length) { validationErrors.push({ respId, ruleId: rule.ruleId, rawCol: colLbl, errorType: "SKIP_ERROR", baseExpr: rule.baseExpr, actualVal: sel.join(",") || inv.join(","), validCodes: "모두 빈값이어야 함", refSummary }); errSet.add(respId); }
+              if (!sel.length && !inv.length) { 
+                validationErrors.push({ respId, ruleId: rule.ruleId, rawCol: colLbl, errorType: "MISSING", baseExpr: rule.baseExpr, actualVal: "(선택 없음)", validCodes: rule.validCodes.join(","), refSummary }); errSet.add(respId); 
+              } else if (inv.length && rule.qType !== "OPEN") { 
+                validationErrors.push({ respId, ruleId: rule.ruleId, rawCol: colLbl, errorType: "OUT_OF_RANGE", baseExpr: rule.baseExpr, actualVal: inv.join(","), validCodes: "0, 1 (또는 코드)", refSummary }); errSet.add(respId); 
+              } else if (sel.length > 1 && rule.exclusiveCodes && rule.exclusiveCodes.some(x => sel.includes(x))) {
+                // Exclusive 위반 로직: 여러 개가 체크되어 있는데 그 중 '없음' 보기가 껴있을 경우
+                const conflicts = sel.filter(x => rule.exclusiveCodes.includes(x));
+                validationErrors.push({ respId, ruleId: rule.ruleId, rawCol: colLbl, errorType: "EXCLUSIVE_ERROR", baseExpr: rule.baseExpr, actualVal: sel.join(","), validCodes: `'${conflicts.join(",")}' 코드는 단독으로만 선택해야 함`, refSummary }); errSet.add(respId);
+              }
+            } else if (sel.length || inv.length) { 
+              validationErrors.push({ respId, ruleId: rule.ruleId, rawCol: colLbl, errorType: "SKIP_ERROR", baseExpr: rule.baseExpr, actualVal: sel.join(",") || inv.join(","), validCodes: "모두 빈값이어야 함", refSummary }); errSet.add(respId); 
+            }
           } else if (rule.qType === "RANKING") {
             validateRankingRule(rule, row, respId, isBase, refSummary, errSet);
           }
@@ -331,19 +350,11 @@
       const { optionCols, rankOrderCols } = rule.rankingMeta;
       const colLabel = formatColSummary(rule.matchedCols);
 
-      // 선생님이 짚어주신 로직: a3_1~10 같은 컬럼은 "해당 보기가 선택되었는지"만 저장(순위 정보 없음)
       const optMap = {}; 
-      optionCols.forEach(o => { 
-        const val = String(row[o.col] ?? "").trim(); 
-        if (val && val !== "0") optMap[o.code] = val; // 선택된 옵션 코드 기록
-      });
-
-      // a3_fst~trd 같은 순위 컬럼은 "어떤 코드가 그 순위에 배정되었는지" 저장
+      optionCols.forEach(o => { const val = String(row[o.col] ?? "").trim(); if (val && val !== "0") optMap[o.code] = val; });
       const ords = []; 
-      rankOrderCols.forEach(r => { 
-        const val = String(row[r.col] ?? "").trim(); 
-        ords.push({ ...r, val }); 
-      });
+      rankOrderCols.forEach(r => { const val = String(row[r.col] ?? "").trim(); ords.push({ ...r, val }); });
+      
       const filled = ords.filter(e => e.val && e.val !== "0");
       const optionRankCount = Object.keys(optMap).length;
 
@@ -355,13 +366,11 @@
         }
         return;
       }
-
       if (optionRankCount === 0 && filled.length === 0) {
         validationErrors.push({ respId, ruleId: rule.ruleId, rawCol: colLabel, errorType: "MISSING", baseExpr: rule.baseExpr, actualVal: "(순위 응답 없음)", validCodes: formatValidSpec(rule), refSummary });
         errorRespSet.add(respId);
         return;
       }
-
       if (rule.validCodes.length > 0) {
         filled.forEach(e => {
           if (!rule.validCodes.includes(e.val)) {
@@ -371,32 +380,17 @@
         });
       }
 
-      const mm = [];
-      const seen = new Set();
-      filled.forEach(e => { 
-        if (seen.has(e.val)) mm.push(`순위 중복(${e.col}=${e.val})`); 
-        seen.add(e.val); 
-      });
-
+      const mm = [], seen = new Set();
+      filled.forEach(e => { if (seen.has(e.val)) mm.push(`순위 중복(${e.col}=${e.val})`); seen.add(e.val); });
       for (let i = 0; i < ords.length; i++) {
         const currEmpty = !ords[i].val || ords[i].val === "0";
         const laterFilled = ords.slice(i + 1).some(x => x.val && x.val !== "0");
         if (currEmpty && laterFilled) mm.push(`${ords[i].col} 누락`);
       }
-
-      // [핵심 변경점] 값(1, 2, 3)을 대조하는 것이 아니라, 두 그룹(순위 입력 배열 vs 보기 선택 배열)의 세트가 정확히 일치하는지만 대조
       if (optionCols.length && rankOrderCols.length) {
-        if (optionRankCount !== filled.length) {
-          mm.push(`선택 개수 불일치 (보기컬럼 ${optionRankCount}개 선택 vs 순위컬럼 ${filled.length}개 랭크됨)`);
-        }
-        filled.forEach(e => {
-          // fst, snd 등에 적힌 코드가 a3_1~10 보기에도 체크되어 있는지 확인
-          if (!optMap[e.val]) {
-            mm.push(`세트 불일치 (${e.col}=${e.val} 입력됨, 그러나 보기컬럼 ${rule.parentVar}_${e.val} 비어있음)`);
-          }
-        });
+        if (optionRankCount !== filled.length) mm.push(`선택 개수 불일치 (보기컬럼 ${optionRankCount}개 선택 vs 순위컬럼 ${filled.length}개 랭크됨)`);
+        filled.forEach(e => { if (!optMap[e.val]) mm.push(`세트 불일치 (${e.col}=${e.val} 입력됨, 그러나 보기컬럼 ${rule.parentVar}_${e.val} 비어있음)`); });
       }
-
       if (mm.length > 0) {
         validationErrors.push({ respId, ruleId: rule.ruleId, rawCol: colLabel, errorType: "RANK_MISMATCH", baseExpr: rule.baseExpr, actualVal: mm.join(" / "), validCodes: "보기 선택 세트와 순위 세트가 일치해야 함", refSummary });
         errorRespSet.add(respId);
@@ -418,7 +412,7 @@
     function renderErrorTable() {
       const type = document.getElementById('filterErrorType').value, search = document.getElementById('filterSearch').value.toLowerCase().trim();
       const flt = validationErrors.filter(e => (type === "ALL" || e.errorType === type) && (!search || e.ruleId.toLowerCase().includes(search) || e.respId.toLowerCase().includes(search) || e.rawCol.toLowerCase().includes(search)));
-      const styles = { MISSING: "bg-red-100 text-red-700", SKIP_ERROR: "bg-amber-100 text-amber-800", OUT_OF_RANGE: "bg-purple-100 text-purple-700", RANK_MISMATCH: "bg-pink-100 text-pink-700", COL_NOT_FOUND: "bg-slate-200 text-slate-700" };
+      const styles = { MISSING: "bg-red-100 text-red-700", SKIP_ERROR: "bg-amber-100 text-amber-800", OUT_OF_RANGE: "bg-purple-100 text-purple-700", RANK_MISMATCH: "bg-pink-100 text-pink-700", EXCLUSIVE_ERROR: "bg-orange-100 text-orange-800", COL_NOT_FOUND: "bg-slate-200 text-slate-700" };
       document.getElementById('errorTableBody').innerHTML = flt.slice(0, 1000).map(e => `<tr class="hover:bg-slate-50"><td class="py-2 px-3 font-semibold">${e.respId}</td><td class="py-2 px-3 font-mono font-bold text-blue-600">${e.ruleId}</td><td class="py-2 px-3 font-mono text-slate-600">${e.rawCol}</td><td class="py-2 px-3"><span class="px-2 py-0.5 rounded text-[11px] font-semibold ${styles[e.errorType] || ''}">${e.errorType}</span></td><td class="py-2 px-3 font-mono text-slate-700">${e.baseExpr}</td><td class="py-2 px-3 font-mono font-bold text-red-600">${e.actualVal}</td><td class="py-2 px-3 text-slate-600">${e.validCodes}</td><td class="py-2 px-3 font-mono text-slate-500">${e.refSummary}</td></tr>`).join("") || `<tr><td colspan="8" class="py-10 text-center text-slate-400">오류가 없습니다.</td></tr>`;
     }
 
