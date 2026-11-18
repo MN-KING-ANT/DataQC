@@ -16,7 +16,7 @@
           <span class="bg-blue-600 text-white px-2.5 py-1 rounded-md text-sm font-extrabold">QC</span>
           설문 Rawdata 로직 검증기
         </h1>
-        <p class="text-xs text-slate-500 mt-0.5">Open 텍스트 응답 호환 및 Exclusive(없음/모름) 중복 체크 자동 검증 완비</p>
+        <p class="text-xs text-slate-500 mt-0.5">Multi-Open 동시 지원(텍스트 허용) 및 Exclusive(없음) 자동 배타성 검증 완비</p>
       </div>
       <div class="flex items-center gap-3">
         <button id="btnDownloadReport" onclick="exportErrorReport()" class="hidden bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-medium px-4 py-2 rounded-lg shadow-sm transition">오류 리포트 다운로드 (.xlsx)</button>
@@ -72,12 +72,12 @@
         <div class="flex flex-wrap gap-2">
           <select id="filterErrorType" onchange="renderErrorTable()" class="text-xs border border-slate-300 rounded-lg px-3 py-2">
             <option value="ALL">전체 오류 유형</option>
-            <option value="MISSING">응답 누락</option>
-            <option value="SKIP_ERROR">스킵 위반</option>
-            <option value="OUT_OF_RANGE">유효 범위 위반</option>
-            <option value="RANK_MISMATCH">순위 불일치</option>
-            <option value="EXCLUSIVE_ERROR">배타성 중복 위반</option>
-            <option value="COL_NOT_FOUND">컬럼 미매칭</option>
+            <option value="MISSING">응답 누락 (Missing)</option>
+            <option value="SKIP_ERROR">스킵 위반 (Skip Error)</option>
+            <option value="OUT_OF_RANGE">범위 위반 (Out of Range)</option>
+            <option value="RANK_MISMATCH">순위 불일치 (Rank Mismatch)</option>
+            <option value="EXCLUSIVE_ERROR">배타성 중복 위반 (Exclusive Error)</option>
+            <option value="COL_NOT_FOUND">컬럼 미매칭 (Not Found)</option>
           </select>
           <input type="text" id="filterSearch" oninput="renderErrorTable()" placeholder="검색..." class="text-xs border border-slate-300 rounded-lg px-3 py-2 w-72" />
         </div>
@@ -165,6 +165,7 @@
 
       blocks.forEach(block => {
         const qLow = block.qTypeRaw.toLowerCase();
+        // 개방형(Open) 속성은 별도의 변수로 들고 가고, MULTI와 겹쳐도 MULTI 속성을 우선 적용하도록 설계
         const isOpen = qLow.includes("open") || qLow.includes("numeric"); 
         const isGrid = qLow.includes("grid");
         const isMulti = qLow.includes("multi") || /\bma\b/.test(qLow);
@@ -188,7 +189,7 @@
             parsedRules.push({
               ruleId: `${block.varName}${item.code}`, parentVar: block.varName, rowCode: item.code, rowIndex: idx + 1,
               qType: isMulti ? "GRID_MULTI" : "GRID_SINGLE", qTypeRaw: block.qTypeRaw, baseExpr: (b1 && b2) ? `(${b1}) & (${b2})` : (b1 || b2 || "All"),
-              validCodes: [...validCodes], exclusiveCodes: [...exclusiveCodes], label: `[${item.code}] ${item.label}`
+              isOpen: isOpen, validCodes: [...validCodes], exclusiveCodes: [...exclusiveCodes], label: `[${item.code}] ${item.label}`
             });
           });
         } else {
@@ -197,12 +198,12 @@
             if (idx === 0 && r.colC && /^base\s*:/i.test(r.colC)) baseExpr = r.colC.replace(/^base\s*:\s*/i, "");
             if (r.colA) {
               validCodes.push(r.colA);
-              // "없음", "모름" 등의 키워드가 포함된 보기는 Exclusive로 자동 지정
               if (/없음|모름|해당\s*사항|않음|기억\s*안\s*남/i.test(r.colB)) exclusiveCodes.push(String(r.colA));
             }
           });
-          let detectedType = isOpen ? "OPEN" : (isRanking ? "RANKING" : (isMulti ? "MULTI" : "SINGLE"));
-          parsedRules.push({ ruleId: block.varName, parentVar: block.varName, qType: detectedType, qTypeRaw: block.qTypeRaw, baseExpr: baseExpr || "All", validCodes, exclusiveCodes, label: block.questionText.replace(/\r?\n/g, " ") });
+          // Multiple answer(Open) 등 다중응답 속성을 먼저 판별하여 MULTI로 분류 (단, isOpen 속성은 들고 감)
+          let detectedType = isRanking ? "RANKING" : (isMulti ? "MULTI" : (isOpen ? "OPEN" : "SINGLE"));
+          parsedRules.push({ ruleId: block.varName, parentVar: block.varName, qType: detectedType, qTypeRaw: block.qTypeRaw, baseExpr: baseExpr || "All", isOpen: isOpen, validCodes, exclusiveCodes, label: block.questionText.replace(/\r?\n/g, " ") });
         }
       });
     }
@@ -305,31 +306,34 @@
             const col = rule.matchedCols[0], val = String(row[col] ?? "").trim();
             if (isBase) {
               if (val === "") { validationErrors.push({ respId, ruleId: rule.ruleId, rawCol: col, errorType: "MISSING", baseExpr: rule.baseExpr, actualVal: "(빈값)", validCodes: rule.validCodes.join(","), refSummary }); errSet.add(respId); }
-              else if (rule.qType !== "OPEN" && rule.validCodes.length && !rule.validCodes.includes(val)) { validationErrors.push({ respId, ruleId: rule.ruleId, rawCol: col, errorType: "OUT_OF_RANGE", baseExpr: rule.baseExpr, actualVal: val, validCodes: rule.validCodes.join(","), refSummary }); errSet.add(respId); }
+              else if (rule.qType !== "OPEN" && !rule.isOpen && rule.validCodes.length && !rule.validCodes.includes(val)) { validationErrors.push({ respId, ruleId: rule.ruleId, rawCol: col, errorType: "OUT_OF_RANGE", baseExpr: rule.baseExpr, actualVal: val, validCodes: rule.validCodes.join(","), refSummary }); errSet.add(respId); }
             } else if (val !== "") { validationErrors.push({ respId, ruleId: rule.ruleId, rawCol: col, errorType: "SKIP_ERROR", baseExpr: rule.baseExpr, actualVal: val, validCodes: "빈값이어야 함 (Skip)", refSummary }); errSet.add(respId); }
           } else if (rule.qType === "MULTI" || rule.qType === "GRID_MULTI") {
             let sel = [], inv = [];
             rule.matchedCols.forEach(c => {
               const val = String(row[c] ?? "").trim(); if (!val || val === "0") return;
               const sf = c.trim().match(/_(\d+)$/);
-              // OPEN 문항이면서 텍스트가 적혀 있으면 해당 서픽스를 선택(sel)된 것으로 정상 처리
-              if (sf) { if (val === "1" || val === sf[1] || rule.qType === "OPEN") sel.push(sf[1]); else inv.push(`${c}=${val}`); }
-              else sel.push(val);
+              if (sf) { 
+                // isOpen(텍스트 허용)이면 값 자체가 무엇이든 에러가 아님
+                if (val === "1" || val === sf[1] || rule.isOpen) sel.push(sf[1]); 
+                else inv.push(`${c}=${val}`); 
+              } else {
+                sel.push(val);
+              }
             });
-            const colLbl = rule.matchedCols.length > 3 ? `${rule.matchedCols[0]}~${rule.matchedCols.length}개` : rule.matchedCols.join(",");
+            const colLbl = rule.matchedCols.length > 3 ? `${rule.matchedCols[0]} ~ ${rule.matchedCols[rule.matchedCols.length - 1]} (${rule.matchedCols.length}개)` : rule.matchedCols.join(", ");
             
             if (isBase) {
               if (!sel.length && !inv.length) { 
                 validationErrors.push({ respId, ruleId: rule.ruleId, rawCol: colLbl, errorType: "MISSING", baseExpr: rule.baseExpr, actualVal: "(선택 없음)", validCodes: rule.validCodes.join(","), refSummary }); errSet.add(respId); 
-              } else if (inv.length && rule.qType !== "OPEN") { 
-                validationErrors.push({ respId, ruleId: rule.ruleId, rawCol: colLbl, errorType: "OUT_OF_RANGE", baseExpr: rule.baseExpr, actualVal: inv.join(","), validCodes: "0, 1 (또는 코드)", refSummary }); errSet.add(respId); 
+              } else if (inv.length && !rule.isOpen) { 
+                validationErrors.push({ respId, ruleId: rule.ruleId, rawCol: colLbl, errorType: "OUT_OF_RANGE", baseExpr: rule.baseExpr, actualVal: inv.join(", "), validCodes: "0, 1 (또는 허용 코드)", refSummary }); errSet.add(respId); 
               } else if (sel.length > 1 && rule.exclusiveCodes && rule.exclusiveCodes.some(x => sel.includes(x))) {
-                // Exclusive 위반 로직: 여러 개가 체크되어 있는데 그 중 '없음' 보기가 껴있을 경우
                 const conflicts = sel.filter(x => rule.exclusiveCodes.includes(x));
-                validationErrors.push({ respId, ruleId: rule.ruleId, rawCol: colLbl, errorType: "EXCLUSIVE_ERROR", baseExpr: rule.baseExpr, actualVal: sel.join(","), validCodes: `'${conflicts.join(",")}' 코드는 단독으로만 선택해야 함`, refSummary }); errSet.add(respId);
+                validationErrors.push({ respId, ruleId: rule.ruleId, rawCol: colLbl, errorType: "EXCLUSIVE_ERROR", baseExpr: rule.baseExpr, actualVal: `선택됨: ${sel.join(", ")}`, validCodes: `'${conflicts.join(", ")}' 코드는 단독으로만 선택해야 함`, refSummary }); errSet.add(respId);
               }
             } else if (sel.length || inv.length) { 
-              validationErrors.push({ respId, ruleId: rule.ruleId, rawCol: colLbl, errorType: "SKIP_ERROR", baseExpr: rule.baseExpr, actualVal: sel.join(",") || inv.join(","), validCodes: "모두 빈값이어야 함", refSummary }); errSet.add(respId); 
+              validationErrors.push({ respId, ruleId: rule.ruleId, rawCol: colLbl, errorType: "SKIP_ERROR", baseExpr: rule.baseExpr, actualVal: sel.length ? sel.join(", ") : inv.join(", "), validCodes: "모두 빈값이어야 함", refSummary }); errSet.add(respId); 
             }
           } else if (rule.qType === "RANKING") {
             validateRankingRule(rule, row, respId, isBase, refSummary, errSet);
@@ -419,7 +423,7 @@
     function renderLogicTable() {
       document.getElementById('logicTableBody').innerHTML = parsedRules.map(r => {
         const m = r.matchedCols && r.matchedCols.length;
-        return `<tr class="hover:bg-slate-50"><td class="py-2 px-3 font-mono font-bold text-blue-600">${r.ruleId}</td><td class="py-2 px-3 font-mono text-slate-600">${r.parentVar}</td><td class="py-2 px-3"><span class="px-2 py-0.5 rounded bg-slate-100 text-[11px]">${r.qType}</span></td><td class="py-2 px-3 font-mono text-emerald-700 font-medium">${r.baseExpr}</td><td class="py-2 px-3 text-slate-600">${r.validCodes.join(",") || "자유응답"}</td><td class="py-2 px-3 font-mono ${m ? 'text-slate-800' : 'text-red-600 font-bold'}">${m ? r.matchedCols.length > 3 ? `${r.matchedCols[0]}~${r.matchedCols.length}개` : r.matchedCols.join(",") : '미매칭'}</td><td class="py-2 px-3 text-slate-500 truncate max-w-xs">${r.label}</td></tr>`;
+        return `<tr class="hover:bg-slate-50"><td class="py-2 px-3 font-mono font-bold text-blue-600">${r.ruleId}</td><td class="py-2 px-3 font-mono text-slate-600">${r.parentVar}</td><td class="py-2 px-3"><span class="px-2 py-0.5 rounded bg-slate-100 text-[11px]">${r.qType}</span></td><td class="py-2 px-3 font-mono text-emerald-700 font-medium">${r.baseExpr}</td><td class="py-2 px-3 text-slate-600">${r.validCodes.join(",") || "자유응답"}</td><td class="py-2 px-3 font-mono ${m ? 'text-slate-800' : 'text-red-600 font-bold'}">${m ? r.matchedCols.length > 3 ? `${r.matchedCols[0]} ~ ${r.matchedCols[r.matchedCols.length-1]} (${r.matchedCols.length}개)` : r.matchedCols.join(", ") : '미매칭'}</td><td class="py-2 px-3 text-slate-500 truncate max-w-xs">${r.label}</td></tr>`;
       }).join("");
     }
 
