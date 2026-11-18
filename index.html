@@ -4,16 +4,11 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Survey Rawdata Logic Validator</title>
-  <!-- Tailwind CSS -->
   <script src="https://cdn.tailwindcss.com"></script>
-  <!-- SheetJS (xlsx) -->
   <script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
-  <style>
-    body { font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, system-ui, sans-serif; }
-  </style>
+  <style> body { font-family: 'Pretendard', -apple-system, sans-serif; } </style>
 </head>
 <body class="bg-slate-50 text-slate-800 min-h-screen">
-
   <header class="bg-white border-b border-slate-200 sticky top-0 z-20">
     <div class="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
       <div>
@@ -21,41 +16,31 @@
           <span class="bg-blue-600 text-white px-2.5 py-1 rounded-md text-sm font-extrabold">QC</span>
           설문 Rawdata 로직 검증기
         </h1>
-        <p class="text-xs text-slate-500 mt-0.5">
-          Grid SA(e41/e4a) · Grid MA(e41_1/e4a_1) · Ranking · ‡기호 처리 및 a-p 범위 자동 파싱 적용
-        </p>
+        <p class="text-xs text-slate-500 mt-0.5">Ranking 코드 저장 구조 호환 및 Multi-Open 텍스트 응답 예외 처리 완비</p>
       </div>
       <div class="flex items-center gap-3">
-        <button id="btnDownloadReport" onclick="exportErrorReport()" class="hidden bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-medium px-4 py-2 rounded-lg shadow-sm transition">
-          오류 리포트 다운로드 (.xlsx)
-        </button>
-        <button onclick="location.reload()" class="text-sm text-slate-600 hover:text-slate-900 border border-slate-300 px-3 py-2 rounded-lg bg-white hover:bg-slate-50 transition">
-          초기화
-        </button>
+        <button id="btnDownloadReport" onclick="exportErrorReport()" class="hidden bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-medium px-4 py-2 rounded-lg shadow-sm transition">오류 리포트 다운로드 (.xlsx)</button>
+        <button onclick="location.reload()" class="text-sm text-slate-600 border border-slate-300 px-3 py-2 rounded-lg bg-white hover:bg-slate-50 transition">초기화</button>
       </div>
     </div>
   </header>
 
   <main class="max-w-7xl mx-auto px-6 py-6 space-y-6">
-
     <section class="grid grid-cols-1 md:grid-cols-2 gap-6">
       <div class="bg-white border-2 border-dashed border-slate-300 rounded-xl p-6 text-center hover:border-blue-500 transition cursor-pointer relative">
         <input type="file" id="logicFileInput" accept=".xlsx,.xls,.csv" class="absolute inset-0 opacity-0 cursor-pointer" />
         <div class="space-y-2">
           <div class="w-12 h-12 bg-blue-50 text-blue-600 rounded-full flex items-center justify-center mx-auto font-bold text-lg">1</div>
           <h2 class="text-base font-bold text-slate-800">로직 가이드 파일 업로드</h2>
-          <p class="text-xs text-slate-500">Variable Name / Question and answers / Question type and Logic 구조 (.xlsx)</p>
-          <p id="logicFileName" class="text-sm font-semibold text-blue-600 pt-1">파일을 선택하거나 여기로 드래그하세요</p>
+          <p id="logicFileName" class="text-sm font-semibold text-blue-600 pt-1">파일을 선택하거나 드래그하세요</p>
         </div>
       </div>
-
       <div class="bg-white border-2 border-dashed border-slate-300 rounded-xl p-6 text-center hover:border-blue-500 transition cursor-pointer relative">
         <input type="file" id="rawFileInput" accept=".xlsx,.xls,.csv" class="absolute inset-0 opacity-0 cursor-pointer" />
         <div class="space-y-2">
           <div class="w-12 h-12 bg-indigo-50 text-indigo-600 rounded-full flex items-center justify-center mx-auto font-bold text-lg">2</div>
           <h2 class="text-base font-bold text-slate-800">Rawdata 파일 업로드</h2>
-          <p class="text-xs text-slate-500">첫 행에 변수명(Header)이 포함된 응답 데이터 (.xlsx, .csv)</p>
-          <p id="rawFileName" class="text-sm font-semibold text-indigo-600 pt-1">파일을 선택하거나 여기로 드래그하세요</p>
+          <p id="rawFileName" class="text-sm font-semibold text-indigo-600 pt-1">파일을 선택하거나 드래그하세요</p>
         </div>
       </div>
     </section>
@@ -63,102 +48,57 @@
     <section class="bg-white border border-slate-200 rounded-xl p-4 flex flex-wrap items-center justify-between gap-4">
       <div class="flex items-center gap-4 flex-wrap">
         <div class="flex items-center gap-2">
-          <label for="idColSelect" class="text-xs font-semibold text-slate-600">응답자 ID 컬럼:</label>
-          <select id="idColSelect" class="text-sm border border-slate-300 rounded-lg px-3 py-1.5 bg-slate-50">
-            <option value="__ROW__">엑셀 행 번호 (기본)</option>
-          </select>
+          <label class="text-xs font-semibold text-slate-600">응답자 ID:</label>
+          <select id="idColSelect" class="text-sm border border-slate-300 rounded-lg px-3 py-1.5 bg-slate-50"><option value="__ROW__">엑셀 행 번호</option></select>
         </div>
-        <span id="projectTitleBadge" class="hidden text-xs bg-slate-100 text-slate-700 font-semibold px-3 py-1.5 rounded-full"></span>
       </div>
-
-      <button id="btnRunValidation" onclick="runValidation()" disabled class="bg-blue-600 disabled:bg-slate-300 hover:bg-blue-700 text-white font-semibold text-sm px-6 py-2.5 rounded-lg shadow-sm transition">
-        로직 대조 검증 실행
-      </button>
+      <button id="btnRunValidation" onclick="runValidation()" disabled class="bg-blue-600 disabled:bg-slate-300 hover:bg-blue-700 text-white font-semibold text-sm px-6 py-2.5 rounded-lg shadow-sm transition">검증 실행</button>
     </section>
 
     <section id="kpiSection" class="hidden grid grid-cols-2 md:grid-cols-5 gap-4">
-      <div class="bg-white p-4 rounded-xl border border-slate-200">
-        <p class="text-xs text-slate-500">총 응답자 수</p>
-        <p id="kpiTotalResp" class="text-2xl font-bold text-slate-900 mt-1">0</p>
-      </div>
-      <div class="bg-white p-4 rounded-xl border border-slate-200">
-        <p class="text-xs text-slate-500">검증 단위 수 (Grid 행 확장)</p>
-        <p id="kpiTotalVars" class="text-2xl font-bold text-slate-900 mt-1">0</p>
-      </div>
-      <div class="bg-white p-4 rounded-xl border border-red-200 bg-red-50/30">
-        <p class="text-xs text-red-600 font-medium">총 발견된 오류 건수</p>
-        <p id="kpiTotalErrors" class="text-2xl font-bold text-red-600 mt-1">0</p>
-      </div>
-      <div class="bg-white p-4 rounded-xl border border-amber-200 bg-amber-50/30">
-        <p class="text-xs text-amber-700 font-medium">오류 발생 응답자 수</p>
-        <p id="kpiErrorResp" class="text-2xl font-bold text-amber-600 mt-1">0</p>
-      </div>
-      <div class="bg-white p-4 rounded-xl border border-emerald-200 bg-emerald-50/30">
-        <p class="text-xs text-emerald-700 font-medium">정상 응답자 비율</p>
-        <p id="kpiCleanRate" class="text-2xl font-bold text-emerald-600 mt-1">0%</p>
-      </div>
+      <div class="bg-white p-4 rounded-xl border border-slate-200"><p class="text-xs text-slate-500">총 응답자</p><p id="kpiTotalResp" class="text-2xl font-bold mt-1">0</p></div>
+      <div class="bg-white p-4 rounded-xl border border-slate-200"><p class="text-xs text-slate-500">검증 단위 수</p><p id="kpiTotalVars" class="text-2xl font-bold mt-1">0</p></div>
+      <div class="bg-white p-4 rounded-xl border border-red-200 bg-red-50/30"><p class="text-xs text-red-600">총 발견된 오류</p><p id="kpiTotalErrors" class="text-2xl font-bold text-red-600 mt-1">0</p></div>
+      <div class="bg-white p-4 rounded-xl border border-amber-200 bg-amber-50/30"><p class="text-xs text-amber-700">오류 응답자 수</p><p id="kpiErrorResp" class="text-2xl font-bold text-amber-600 mt-1">0</p></div>
+      <div class="bg-white p-4 rounded-xl border border-emerald-200 bg-emerald-50/30"><p class="text-xs text-emerald-700">정상 응답률</p><p id="kpiCleanRate" class="text-2xl font-bold text-emerald-600 mt-1">0%</p></div>
     </section>
 
     <section id="resultSection" class="hidden bg-white border border-slate-200 rounded-xl overflow-hidden">
       <div class="border-b border-slate-200 px-6 flex items-center gap-6 bg-slate-50">
-        <button id="tabBtnErrors" onclick="switchTab('errors')" class="py-3.5 text-sm font-bold border-b-2 border-blue-600 text-blue-600">
-          오류 상세 내역 (<span id="tabErrorCount">0</span>)
-        </button>
-        <button id="tabBtnLogic" onclick="switchTab('logic')" class="py-3.5 text-sm font-medium border-b-2 border-transparent text-slate-500 hover:text-slate-800">
-          파싱된 로직 & 컬럼 매칭 확인 (<span id="tabLogicCount">0</span>)
-        </button>
+        <button id="tabBtnErrors" onclick="switchTab('errors')" class="py-3.5 text-sm font-bold border-b-2 border-blue-600 text-blue-600">오류 내역 (<span id="tabErrorCount">0</span>)</button>
+        <button id="tabBtnLogic" onclick="switchTab('logic')" class="py-3.5 text-sm font-medium border-b-2 border-transparent text-slate-500">파싱된 로직 (<span id="tabLogicCount">0</span>)</button>
       </div>
-
       <div id="tabErrorsContent" class="p-6 space-y-4">
-        <div class="flex flex-wrap items-center justify-between gap-3">
-          <div class="flex items-center gap-2 flex-wrap">
-            <select id="filterErrorType" onchange="renderErrorTable()" class="text-xs border border-slate-300 rounded-lg px-3 py-2 bg-white">
-              <option value="ALL">전체 오류 유형</option>
-              <option value="MISSING">응답 누락 (Base 충족이나 빈값)</option>
-              <option value="SKIP_ERROR">스킵 위반 / Over-punch (Base 미충족이나 응답 있음)</option>
-              <option value="OUT_OF_RANGE">유효 범위 위반 (정의되지 않은 보기 코드)</option>
-              <option value="RANK_MISMATCH">순위 불일치 (a1_1~15 vs fst/snd/trd 불일치·중복)</option>
-              <option value="COL_NOT_FOUND">Rawdata 컬럼 미매칭</option>
-            </select>
-            <input type="text" id="filterSearch" oninput="renderErrorTable()" placeholder="변수명(예: c4a, e41, a1) 또는 응답자 ID 검색..." class="text-xs border border-slate-300 rounded-lg px-3 py-2 w-72" />
-          </div>
-          <p class="text-xs text-slate-500">최대 1,000건까지 화면에 표시됩니다 (전체 내역은 엑셀 다운로드 이용)</p>
+        <div class="flex flex-wrap gap-2">
+          <select id="filterErrorType" onchange="renderErrorTable()" class="text-xs border border-slate-300 rounded-lg px-3 py-2">
+            <option value="ALL">전체 오류 유형</option>
+            <option value="MISSING">응답 누락</option>
+            <option value="SKIP_ERROR">스킵 위반</option>
+            <option value="OUT_OF_RANGE">유효 범위 위반</option>
+            <option value="RANK_MISMATCH">순위 불일치</option>
+            <option value="COL_NOT_FOUND">컬럼 미매칭</option>
+          </select>
+          <input type="text" id="filterSearch" oninput="renderErrorTable()" placeholder="검색..." class="text-xs border border-slate-300 rounded-lg px-3 py-2 w-72" />
         </div>
-
         <div class="overflow-x-auto border border-slate-200 rounded-lg max-h-[540px]">
           <table class="w-full text-left border-collapse text-xs">
-            <thead class="bg-slate-100 text-slate-600 sticky top-0 z-10">
+            <thead class="bg-slate-100 text-slate-600 sticky top-0">
               <tr>
-                <th class="py-2.5 px-3 border-b">응답자 ID</th>
-                <th class="py-2.5 px-3 border-b">검증 문항</th>
-                <th class="py-2.5 px-3 border-b">Rawdata 대상 컬럼</th>
-                <th class="py-2.5 px-3 border-b">오류 유형</th>
-                <th class="py-2.5 px-3 border-b">적용된 Base 조건</th>
-                <th class="py-2.5 px-3 border-b">실제 입력값</th>
-                <th class="py-2.5 px-3 border-b">허용 기준</th>
-                <th class="py-2.5 px-3 border-b">참조 변수 실제값</th>
+                <th class="py-2.5 px-3 border-b">ID</th><th class="py-2.5 px-3 border-b">문항</th><th class="py-2.5 px-3 border-b">컬럼</th><th class="py-2.5 px-3 border-b">오류 유형</th>
+                <th class="py-2.5 px-3 border-b">Base 조건</th><th class="py-2.5 px-3 border-b">실제 입력값</th><th class="py-2.5 px-3 border-b">허용 기준</th><th class="py-2.5 px-3 border-b">참조 변수값</th>
               </tr>
             </thead>
             <tbody id="errorTableBody" class="divide-y divide-slate-100"></tbody>
           </table>
         </div>
       </div>
-
       <div id="tabLogicContent" class="hidden p-6 space-y-4">
-        <p class="text-xs text-slate-500">
-          로직 가이드에서 추출된 문항별·그리드 행별 검증 규칙과 실제 Rawdata 컬럼 매칭 결과입니다.
-        </p>
         <div class="overflow-x-auto border border-slate-200 rounded-lg max-h-[540px]">
           <table class="w-full text-left border-collapse text-xs">
-            <thead class="bg-slate-100 text-slate-600 sticky top-0 z-10">
+            <thead class="bg-slate-100 text-slate-600 sticky top-0">
               <tr>
-                <th class="py-2.5 px-3 border-b">검증 단위 ID</th>
-                <th class="py-2.5 px-3 border-b">원본 문항</th>
-                <th class="py-2.5 px-3 border-b">판별 유형</th>
-                <th class="py-2.5 px-3 border-b">결합 Base 조건</th>
-                <th class="py-2.5 px-3 border-b">유효 보기 코드</th>
-                <th class="py-2.5 px-3 border-b">매칭된 Rawdata 컬럼</th>
-                <th class="py-2.5 px-3 border-b">문항/행 설명</th>
+                <th class="py-2.5 px-3 border-b">단위 ID</th><th class="py-2.5 px-3 border-b">원본 문항</th><th class="py-2.5 px-3 border-b">유형</th><th class="py-2.5 px-3 border-b">Base 조건</th>
+                <th class="py-2.5 px-3 border-b">유효 코드</th><th class="py-2.5 px-3 border-b">매칭된 컬럼</th><th class="py-2.5 px-3 border-b">설명</th>
               </tr>
             </thead>
             <tbody id="logicTableBody" class="divide-y divide-slate-100"></tbody>
@@ -166,26 +106,12 @@
         </div>
       </div>
     </section>
-
   </main>
 
   <script>
-    let rawLogicRows = [];
-    let rawDataRows = [];
-    let rawDataHeaders = [];
-    let lowerHeaderMap = {};
-    let parsedRules = [];
-    let validationErrors = [];
-    let projectName = "";
-    let variableValueCache = {};
-
-    const RANK_SUFFIXES = [
-      { suffix: "fst", rank: 1 },
-      { suffix: "snd", rank: 2 },
-      { suffix: "trd", rank: 3 },
-      { suffix: "4th", rank: 4 },
-      { suffix: "5th", rank: 5 }
-    ];
+    let rawLogicRows = [], rawDataRows = [], rawDataHeaders = [], lowerHeaderMap = {};
+    let parsedRules = [], validationErrors = [], variableValueCache = {};
+    const RANK_SUFFIXES = [{ suffix: "fst", rank: 1 }, { suffix: "snd", rank: 2 }, { suffix: "trd", rank: 3 }, { suffix: "4th", rank: 4 }, { suffix: "5th", rank: 5 }];
 
     document.getElementById('logicFileInput').addEventListener('change', (e) => handleFile(e.target.files[0], 'logic'));
     document.getElementById('rawFileInput').addEventListener('change', (e) => handleFile(e.target.files[0], 'raw'));
@@ -194,679 +120,262 @@
       if (!file) return;
       const reader = new FileReader();
       reader.onload = (e) => {
-        const data = new Uint8Array(e.target.result);
-        const workbook = XLSX.read(data, { type: 'array' });
-        const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
-
+        const wb = XLSX.read(new Uint8Array(e.target.result), { type: 'array' });
+        const ws = wb.Sheets[wb.SheetNames[0]];
         if (type === 'logic') {
-          rawLogicRows = XLSX.utils.sheet_to_json(firstSheet, { header: 1, defval: "" });
-          document.getElementById('logicFileName').textContent = `✅ ${file.name} (${rawLogicRows.length}행 로드됨)`;
+          rawLogicRows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: "" });
+          document.getElementById('logicFileName').textContent = `✅ ${file.name} 로드됨`;
           parseLogicRows(rawLogicRows);
         } else {
-          const jsonWithHeaders = XLSX.utils.sheet_to_json(firstSheet, { defval: "" });
-          rawDataRows = jsonWithHeaders;
-          rawDataHeaders = jsonWithHeaders.length > 0 ? Object.keys(jsonWithHeaders[0]) : [];
+          rawDataRows = XLSX.utils.sheet_to_json(ws, { defval: "" });
+          rawDataHeaders = rawDataRows.length ? Object.keys(rawDataRows[0]) : [];
           lowerHeaderMap = {};
           rawDataHeaders.forEach(h => { lowerHeaderMap[h.toLowerCase().trim()] = h; });
-
-          document.getElementById('rawFileName').textContent = `✅ ${file.name} (${rawDataRows.length}명 / ${rawDataHeaders.length}컬럼)`;
-          populateIdColumnSelector(rawDataHeaders);
+          document.getElementById('rawFileName').textContent = `✅ ${file.name} 로드됨`;
+          const sel = document.getElementById('idColSelect');
+          sel.innerHTML = '<option value="__ROW__">엑셀 행 번호</option>';
+          rawDataHeaders.forEach(h => {
+            const opt = document.createElement('option'); opt.value = h; opt.textContent = h; sel.appendChild(opt);
+            if (/^(id|respid|uuid|iirepserial)$/i.test(h)) sel.value = h;
+          });
         }
-
-        if (rawLogicRows.length > 0 && rawDataRows.length > 0) {
-          document.getElementById('btnRunValidation').disabled = false;
-        }
+        if (rawLogicRows.length > 0 && rawDataRows.length > 0) document.getElementById('btnRunValidation').disabled = false;
       };
       reader.readAsArrayBuffer(file);
     }
 
-    function populateIdColumnSelector(headers) {
-      const select = document.getElementById('idColSelect');
-      select.innerHTML = '<option value="__ROW__">엑셀 행 번호 (기본)</option>';
-      const idCandidates = ['id', 'resp_id', 'respid', 'record', 'uuid', 'pid', 'uid', 'panel_id', 'iiRepSerial'];
-      let matchedDefault = null;
-
-      headers.forEach(h => {
-        const opt = document.createElement('option');
-        opt.value = h;
-        opt.textContent = h;
-        select.appendChild(opt);
-        if (!matchedDefault && idCandidates.includes(h.toLowerCase().trim())) {
-          matchedDefault = h;
-        }
-      });
-      if (matchedDefault) select.value = matchedDefault;
-    }
-
     function parseLogicRows(rows) {
       parsedRules = [];
-      projectName = "";
-
       let startIdx = 0;
       for (let i = 0; i < Math.min(rows.length, 15); i++) {
-        const colA = String(rows[i][0] || "").trim();
-        if (colA.toLowerCase().startsWith("project name")) {
-          projectName = colA;
-          const badge = document.getElementById('projectTitleBadge');
-          badge.textContent = projectName;
-          badge.classList.remove('hidden');
-        }
-        if (colA.toLowerCase() === "variable name") {
-          startIdx = i + 1;
-          break;
-        }
+        if (String(rows[i][0]).toLowerCase().trim() === "variable name") { startIdx = i + 1; break; }
       }
-
-      const blocks = [];
-      let currentBlock = null;
-
+      let currentBlock = null, blocks = [];
       for (let i = startIdx; i < rows.length; i++) {
-        const colA = String(rows[i][0] ?? "").trim();
-        const colB = String(rows[i][1] ?? "").trim();
-        const colC = String(rows[i][2] ?? "").trim();
-
+        const colA = String(rows[i][0] ?? "").trim(), colB = String(rows[i][1] ?? "").trim(), colC = String(rows[i][2] ?? "").trim();
         if (!colA && !colB && !colC) continue;
-
-        const isQuestionType = /single|multi|grid|rank|순위|open|numeric|slider/i.test(colC);
-        const isQuestionHeader = colA !== "" && colC !== "" && isQuestionType;
-
-        if (isQuestionHeader) {
+        const isHeader = colA !== "" && colC !== "" && /single|multi|grid|rank|순위|open|numeric|slider/i.test(colC);
+        if (isHeader) {
           if (currentBlock) blocks.push(currentBlock);
           currentBlock = { varName: colA, questionText: colB, qTypeRaw: colC, subRows: [] };
-        } else if (currentBlock) {
-          currentBlock.subRows.push({ colA, colB, colC });
-        }
+        } else if (currentBlock) currentBlock.subRows.push({ colA, colB, colC });
       }
       if (currentBlock) blocks.push(currentBlock);
 
       blocks.forEach(block => {
-        const qTypeLower = block.qTypeRaw.toLowerCase();
-        const isGrid = qTypeLower.includes("grid");
-        const isMulti = qTypeLower.includes("multi") || /\bma\b/.test(qTypeLower);
-        const isRanking = qTypeLower.includes("rank") || qTypeLower.includes("순위");
-        const isOpen = qTypeLower.includes("open") || qTypeLower.includes("numeric");
+        const qLow = block.qTypeRaw.toLowerCase();
+        const isOpen = qLow.includes("open") || qLow.includes("numeric"); 
+        const isGrid = qLow.includes("grid");
+        const isMulti = qLow.includes("multi") || /\bma\b/.test(qLow);
+        const isRanking = qLow.includes("rank") || qLow.includes("순위");
 
         if (isGrid) {
-          let section = "NONE";
-          let gridBase = "All";
-          const gridItems = [];
-          const validCodes = [];
-
+          let section = "NONE", gridBase = "All", gridItems = [], validCodes = [];
           block.subRows.forEach(r => {
-            const bLower = r.colB.toLowerCase().trim();
-            if (r.colA === "" && bLower === "rows") {
-              section = "ROWS";
-              if (r.colC) gridBase = cleanBaseString(r.colC);
-              return;
-            }
-            if (r.colA === "" && (bLower === "columns" || bLower === "cloumns" || bLower === "column")) {
-              section = "COLS";
-              return;
-            }
-
-            if (section === "ROWS" && r.colA !== "") {
-              gridItems.push({
-                rowCode: r.colA,
-                rowLabel: r.colB,
-                rowBase: r.colC ? cleanBaseString(r.colC) : "All"
-              });
-            } else if (section === "COLS" && r.colA !== "") {
-              validCodes.push(r.colA);
-            }
+            const bLow = r.colB.toLowerCase().trim();
+            if (r.colA === "" && bLow === "rows") { section = "ROWS"; if (r.colC) gridBase = r.colC.replace(/^base\s*:\s*/i, ""); return; }
+            if (r.colA === "" && (bLow === "columns" || bLow === "cloumns")) { section = "COLS"; return; }
+            if (section === "ROWS" && r.colA) gridItems.push({ code: r.colA, label: r.colB, base: r.colC ? r.colC.replace(/^base\s*:\s*/i, "") : "All" });
+            else if (section === "COLS" && r.colA) validCodes.push(r.colA);
           });
-
           gridItems.forEach((item, idx) => {
-            const combinedBase = combineBases(gridBase, item.rowBase);
+            const b1 = (!gridBase || gridBase.toLowerCase() === "all") ? null : gridBase;
+            const b2 = (!item.base || item.base.toLowerCase() === "all") ? null : item.base;
             parsedRules.push({
-              ruleId: `${block.varName}${item.rowCode}`,
-              parentVar: block.varName,
-              rowCode: item.rowCode,
-              rowIndex: idx + 1,
-              qType: isMulti ? "GRID_MULTI" : "GRID_SINGLE",
-              qTypeRaw: block.qTypeRaw,
-              baseExpr: combinedBase,
-              validCodes: [...validCodes],
-              numericRange: null,
-              label: `[${item.rowCode}] ${item.rowLabel}`
+              ruleId: `${block.varName}${item.code}`, parentVar: block.varName, rowCode: item.code, rowIndex: idx + 1,
+              qType: isMulti ? "GRID_MULTI" : "GRID_SINGLE", qTypeRaw: block.qTypeRaw, baseExpr: (b1 && b2) ? `(${b1}) & (${b2})` : (b1 || b2 || "All"),
+              validCodes: [...validCodes], label: `[${item.code}] ${item.label}`
             });
           });
-
         } else {
-          let baseExpr = "All";
-          const validCodes = [];
-          let numericRange = null;
-
+          let baseExpr = "All", validCodes = [];
           block.subRows.forEach((r, idx) => {
-            if (idx === 0 && r.colC && /^base\s*:/i.test(r.colC)) {
-              baseExpr = cleanBaseString(r.colC);
-            }
-            if (r.colA !== "") {
-              validCodes.push(r.colA);
-              const rangeMatch = r.colB.match(/^(\d+)\s*-\s*(\d+)$/);
-              if (rangeMatch && block.subRows.length === 1) {
-                numericRange = { min: Number(rangeMatch[1]), max: Number(rangeMatch[2]) };
-              }
-            }
+            if (idx === 0 && r.colC && /^base\s*:/i.test(r.colC)) baseExpr = r.colC.replace(/^base\s*:\s*/i, "");
+            if (r.colA) validCodes.push(r.colA);
           });
-
-          let detectedType = "SINGLE";
-          if (isRanking) detectedType = "RANKING";
-          else if (isMulti) detectedType = "MULTI";
-          else if (isOpen) detectedType = "OPEN";
-
-          parsedRules.push({
-            ruleId: block.varName,
-            parentVar: block.varName,
-            rowCode: null,
-            rowIndex: null,
-            qType: detectedType,
-            qTypeRaw: block.qTypeRaw,
-            baseExpr: baseExpr,
-            validCodes: validCodes,
-            numericRange: numericRange,
-            label: block.questionText.replace(/\r?\n/g, " ")
-          });
+          // Fix 2: Prioritize OPEN over MULTI to prevent Out of Range for text multi-responses
+          let detectedType = isOpen ? "OPEN" : (isRanking ? "RANKING" : (isMulti ? "MULTI" : "SINGLE"));
+          parsedRules.push({ ruleId: block.varName, parentVar: block.varName, qType: detectedType, qTypeRaw: block.qTypeRaw, baseExpr: baseExpr || "All", validCodes, label: block.questionText.replace(/\r?\n/g, " ") });
         }
       });
-    }
-
-    function cleanBaseString(str) {
-      if (!str) return "All";
-      const cleaned = str.replace(/^base\s*:\s*/i, "").trim();
-      return cleaned === "" ? "All" : cleaned;
-    }
-
-    function combineBases(base1, base2) {
-      const b1 = (!base1 || base1.toLowerCase() === "all") ? null : base1;
-      const b2 = (!base2 || base2.toLowerCase() === "all") ? null : base2;
-      if (b1 && b2) return `(${b1}) & (${b2})`;
-      return b1 || b2 || "All";
     }
 
     function bindColumnsToRule(rule) {
       const v = rule.parentVar.toLowerCase().trim();
-
-      if (rule.qType !== "GRID_SINGLE" && rule.qType !== "GRID_MULTI") {
-        if (lowerHeaderMap[`${v}_fst`] || lowerHeaderMap[`${v}_snd`]) rule.qType = "RANKING";
-      }
-
       if (rule.qType === "GRID_SINGLE") {
         const rc = rule.rowCode.toLowerCase().trim();
-        const candidates = [`${v}${rc}`, `${v}_${rc}`];
-        for (const cand of candidates) {
-          if (lowerHeaderMap[cand]) { rule.matchedCols = [lowerHeaderMap[cand]]; return; }
-        }
-        rule.matchedCols = [];
+        rule.matchedCols = lowerHeaderMap[`${v}${rc}`] ? [lowerHeaderMap[`${v}${rc}`]] : (lowerHeaderMap[`${v}_${rc}`] ? [lowerHeaderMap[`${v}_${rc}`]] : []);
         return;
       }
-
       if (rule.qType === "GRID_MULTI") {
-        const rc = rule.rowCode.toLowerCase().trim();
-        const prefixes = [`${v}${rc}`, `${v}_${rc}`];
-        let foundCols = [];
-
-        for (const prefix of prefixes) {
-          if (rule.validCodes.length > 0) {
-            const temp = [];
-            rule.validCodes.forEach(code => {
-              const colKey = `${prefix}_${String(code).toLowerCase().trim()}`;
-              if (lowerHeaderMap[colKey]) temp.push(lowerHeaderMap[colKey]);
-            });
-            if (temp.length > 0) { foundCols = temp; break; }
-          }
-          const regex = new RegExp(`^${escapeRegex(prefix)}_(\\d+)$`, 'i');
-          const regexCols = rawDataHeaders.filter(h => regex.test(h.trim()));
-          if (regexCols.length > 0) { foundCols = regexCols; break; }
+        const rc = rule.rowCode.toLowerCase().trim(), pfx = [`${v}${rc}`, `${v}_${rc}`];
+        let found = [];
+        for (const p of pfx) {
+          const rx = new RegExp(`^${p.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}_(\\d+)$`, 'i');
+          const mt = rawDataHeaders.filter(h => rx.test(h.trim()));
+          if (mt.length) { found = mt; break; }
         }
-        rule.matchedCols = foundCols;
-        return;
+        rule.matchedCols = found; return;
       }
-
       if (rule.qType === "RANKING") {
-        const optionCols = [];
-        if (rule.validCodes.length > 0) {
-          rule.validCodes.forEach(code => {
-            const key = `${v}_${String(code).toLowerCase().trim()}`;
-            if (lowerHeaderMap[key]) optionCols.push({ code: String(code), col: lowerHeaderMap[key] });
-          });
-        } else {
-          const regex = new RegExp(`^${escapeRegex(v)}_(\\d+)$`, 'i');
-          rawDataHeaders.forEach(h => {
-            const m = h.trim().match(regex);
-            if (m) optionCols.push({ code: m[1], col: h });
-          });
-        }
-
-        const rankOrderCols = [];
-        RANK_SUFFIXES.forEach(rs => {
-          const key = `${v}_${rs.suffix}`;
-          if (lowerHeaderMap[key]) rankOrderCols.push({ rank: rs.rank, suffix: rs.suffix, col: lowerHeaderMap[key] });
-        });
-
-        rule.rankingMeta = { optionCols, rankOrderCols };
-        rule.matchedCols = [...optionCols.map(o => o.col), ...rankOrderCols.map(r => r.col)];
+        const opts = [], rks = [];
+        const rx = new RegExp(`^${v.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}_(\\d+)$`, 'i');
+        rawDataHeaders.forEach(h => { const m = h.trim().match(rx); if (m) opts.push({ code: m[1], col: h }); });
+        RANK_SUFFIXES.forEach(rs => { if (lowerHeaderMap[`${v}_${rs.suffix}`]) rks.push({ rank: rs.rank, suffix: rs.suffix, col: lowerHeaderMap[`${v}_${rs.suffix}`] }); });
+        rule.rankingMeta = { optionCols: opts, rankOrderCols: rks };
+        rule.matchedCols = [...opts.map(o => o.col), ...rks.map(r => r.col)];
         return;
       }
-
-      if (rule.qType === "MULTI") {
-        const subCols = [];
-        if (rule.validCodes.length > 0) {
-          rule.validCodes.forEach(code => {
-            const key = `${v}_${String(code).toLowerCase().trim()}`;
-            if (lowerHeaderMap[key]) subCols.push(lowerHeaderMap[key]);
-          });
-        }
-        if (subCols.length === 0) {
-          const regex = new RegExp(`^${escapeRegex(v)}_(\\d+)$`, 'i');
-          rawDataHeaders.forEach(h => { if (regex.test(h.trim())) subCols.push(h); });
-        }
-        if (subCols.length === 0 && lowerHeaderMap[v]) subCols.push(lowerHeaderMap[v]);
-        rule.matchedCols = subCols;
-        return;
+      if (rule.qType === "MULTI" || rule.qType === "OPEN") {
+        const rx = new RegExp(`^${v.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}_(\\d+)$`, 'i'), sub = [];
+        rawDataHeaders.forEach(h => { if (rx.test(h.trim())) sub.push(h); });
+        if (!sub.length && lowerHeaderMap[v]) sub.push(lowerHeaderMap[v]);
+        rule.matchedCols = sub; return;
       }
-
       rule.matchedCols = lowerHeaderMap[v] ? [lowerHeaderMap[v]] : [];
     }
 
-    function getRespondentValues(row, varName) {
+    function getRespVals(row, varName) {
       const v = varName.toLowerCase().trim();
-
       if (!variableValueCache[v]) {
-        let varsToCheck = [v];
-        // Handle range patterns like c16a-p or e52b_a-p
-        const rangeMatch = v.match(/^([a-z0-9_]+)_?([a-z])-([a-z])$/i);
-        if (rangeMatch) {
-          varsToCheck = [];
-          const base = rangeMatch[1];
-          const startChar = rangeMatch[2].charCodeAt(0);
-          const endChar = rangeMatch[3].charCodeAt(0);
-          for (let i = startChar; i <= endChar; i++) {
-            const char = String.fromCharCode(i);
-            varsToCheck.push(`${base}${char}`);
-            varsToCheck.push(`${base}_${char}`);
-          }
-        }
-
-        const exactCols = [];
-        const rankOrderCols = [];
-        const subOptionCols = [];
-
-        varsToCheck.forEach(vc => {
-          if (lowerHeaderMap[vc]) exactCols.push(lowerHeaderMap[vc]);
-          
-          RANK_SUFFIXES.forEach(rs => {
-            if (lowerHeaderMap[`${vc}_${rs.suffix}`]) {
-              rankOrderCols.push({ rank: rs.rank, suffix: rs.suffix, col: lowerHeaderMap[`${vc}_${rs.suffix}`] });
-            }
-          });
-
-          const regex = new RegExp(`^${escapeRegex(vc)}_(\\d+)$`, 'i');
-          rawDataHeaders.forEach(h => {
-            const m = h.trim().match(regex);
-            if (m) subOptionCols.push({ code: m[1], col: h });
-          });
+        let vars = [v];
+        const rm = v.match(/^([a-z0-9_]+)_?([a-z])-([a-z])$/i);
+        if (rm) { vars = []; for (let i = rm[2].charCodeAt(0); i <= rm[3].charCodeAt(0); i++) { vars.push(`${rm[1]}${String.fromCharCode(i)}`); vars.push(`${rm[1]}_${String.fromCharCode(i)}`); } }
+        let ex = [], rk = [], sub = [];
+        vars.forEach(vc => {
+          if (lowerHeaderMap[vc]) ex.push(lowerHeaderMap[vc]);
+          RANK_SUFFIXES.forEach(rs => { if (lowerHeaderMap[`${vc}_${rs.suffix}`]) rk.push(lowerHeaderMap[`${vc}_${rs.suffix}`]); });
+          const rx = new RegExp(`^${vc.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}_(\\d+)$`, 'i');
+          rawDataHeaders.forEach(h => { const m = h.match(rx); if (m) sub.push({ code: m[1], col: h }); });
         });
-
-        variableValueCache[v] = { exactCols, rankOrderCols, subOptionCols };
+        variableValueCache[v] = { ex, rk, sub };
       }
-
-      const info = variableValueCache[v];
-      const selected = new Set();
-
-      info.exactCols.forEach(col => {
-        const rawVal = String(row[col] ?? "").trim();
-        if (rawVal !== "") {
-          rawVal.split(/\s*,\s*/).forEach(part => {
-            if (part !== "") selected.add(part);
-          });
-        }
-      });
-
-      info.rankOrderCols.forEach(e => {
-        const val = String(row[e.col] ?? "").trim();
-        if (val !== "" && val !== "0") selected.add(val);
-      });
-
-      info.subOptionCols.forEach(({ code, col }) => {
-        const val = String(row[col] ?? "").trim();
-        if (val !== "" && val !== "0") selected.add(code);
-      });
-
-      return Array.from(selected);
+      const info = variableValueCache[v], sel = new Set();
+      info.ex.forEach(c => { const val = String(row[c] ?? "").trim(); if (val) val.split(",").forEach(p => p.trim() && sel.add(p.trim())); });
+      info.rk.forEach(c => { const val = String(row[c] ?? "").trim(); if (val && val !== "0") sel.add(val); });
+      info.sub.forEach(c => { const val = String(row[c.col] ?? "").trim(); if (val && val !== "0") sel.add(c.code); });
+      return Array.from(sel);
     }
 
-    function evaluateBaseCondition(baseExpr, row) {
-      if (!baseExpr || baseExpr.toLowerCase() === "all") {
-        return { passed: true, refSummary: "Base: All" };
-      }
-
+    function evalBase(baseExpr, row) {
+      if (!baseExpr || baseExpr.toLowerCase() === "all") return { passed: true, refSummary: "Base: All" };
       const refVars = new Set();
-
-      // Support ‡, ≠, !=, <=, >=, etc. And dash (-) in LHS variables (like c16a-p)
-      const jsBoolExpr = baseExpr
-        .replace(/\bAND\b/gi, "&&")
-        .replace(/\bOR\b/gi, "||")
-        .replace(/&+/g, "&&")
-        .replace(/\|+/g, "||")
-        .replace(/([a-zA-Z0-9_.\-]+)\s*(‡|≠|!=|<>|>=|<=|>|<|=)\s*([0-9,\-\sA-Za-z]+)/g, (match, varName, op, rhs) => {
-          refVars.add(varName);
-          const actualVals = getRespondentValues(row, varName);
-          const targetCodes = parseRhsCodes(rhs);
-
-          if (op === "=") {
-            const hit = actualVals.some(v => targetCodes.includes(String(v)));
-            return hit ? "true" : "false";
-          }
-          if (op === "≠" || op === "!=" || op === "<>" || op === "‡") {
-            const hit = actualVals.some(v => targetCodes.includes(String(v)));
-            return (!hit) ? "true" : "false";
-          }
-          const numTarget = Number(rhs.trim());
-          const numActual = actualVals.length > 0 ? Number(actualVals[0]) : NaN;
-          if (isNaN(numActual)) return "false";
-          if (op === ">=") return numActual >= numTarget ? "true" : "false";
-          if (op === "<=") return numActual <= numTarget ? "true" : "false";
-          if (op === ">") return numActual > numTarget ? "true" : "false";
-          if (op === "<") return numActual < numTarget ? "true" : "false";
+      const js = baseExpr.replace(/\bAND\b/gi, "&&").replace(/\bOR\b/gi, "||").replace(/&+/g, "&&").replace(/\|+/g, "||")
+        .replace(/([a-zA-Z0-9_.\-]+)\s*(‡|≠|!=|<>|>=|<=|>|<|=)\s*([0-9,\-\sA-Za-z]+)/g, (m, v, op, rhs) => {
+          refVars.add(v); const vals = getRespVals(row, v), tgts = [];
+          rhs.split(",").forEach(p => { const r = p.trim().match(/^(\d+)\s*-\s*(\d+)$/); if (r) { for (let k = Number(r[1]); k <= Number(r[2]); k++) tgts.push(String(k)); } else if (p.trim()) tgts.push(p.trim()); });
+          if (op === "=") return vals.some(x => tgts.includes(String(x))) ? "true" : "false";
+          if (["≠", "!=", "<>", "‡"].includes(op)) return !vals.some(x => tgts.includes(String(x))) ? "true" : "false";
+          const nt = Number(rhs.trim()), na = vals.length ? Number(vals[0]) : NaN;
+          if (isNaN(na)) return "false";
+          if (op === ">=") return na >= nt ? "true" : "false"; if (op === "<=") return na <= nt ? "true" : "false";
+          if (op === ">") return na > nt ? "true" : "false"; if (op === "<") return na < nt ? "true" : "false";
           return "true";
         });
-
-      let passed = true;
-      try { passed = Boolean(Function(`"use strict"; return (${jsBoolExpr});`)()); } 
-      catch (e) { console.warn("Base evaluation error:", baseExpr, jsBoolExpr, e); passed = true; }
-
-      const refParts = [];
-      refVars.forEach(rv => {
-        const vals = getRespondentValues(row, rv);
-        refParts.push(`${rv}=[${vals.join(",") || "빈값"}]`);
-      });
-
-      return { passed, refSummary: refParts.join(", ") };
-    }
-
-    function parseRhsCodes(rhs) {
-      const result = [];
-      rhs.split(",").forEach(part => {
-        const trimmed = part.trim();
-        const range = trimmed.match(/^(\d+)\s*-\s*(\d+)$/);
-        if (range) {
-          const start = Number(range[1]);
-          const end = Number(range[2]);
-          for (let k = start; k <= end; k++) result.push(String(k));
-        } else if (trimmed !== "") {
-          result.push(trimmed);
-        }
-      });
-      return result;
+      let passed = true; try { passed = Boolean(Function(`"use strict"; return (${js});`)()); } catch(e){}
+      return { passed, refSummary: Array.from(refVars).map(v => `${v}=[${getRespVals(row, v).join(",") || "빈값"}]`).join(", ") };
     }
 
     function runValidation() {
-      validationErrors = [];
-      variableValueCache = {};
+      validationErrors = []; variableValueCache = {};
       const idCol = document.getElementById('idColSelect').value;
-
-      parsedRules.forEach(rule => bindColumnsToRule(rule));
-
-      const errorRespSet = new Set();
+      parsedRules.forEach(r => bindColumnsToRule(r));
+      const errSet = new Set();
 
       parsedRules.forEach(rule => {
         if (!rule.matchedCols || rule.matchedCols.length === 0) {
-          validationErrors.push({
-            respId: "전체(구조오류)", ruleId: rule.ruleId, rawCol: "미매칭", errorType: "COL_NOT_FOUND",
-            baseExpr: rule.baseExpr, actualVal: "-", validCodes: formatValidSpec(rule),
-            refSummary: "Rawdata에서 해당 변수 컬럼을 찾을 수 없음 (오타 확인)"
-          });
+          validationErrors.push({ respId: "전체(오류)", ruleId: rule.ruleId, rawCol: "미매칭", errorType: "COL_NOT_FOUND", baseExpr: rule.baseExpr, actualVal: "-", validCodes: rule.validCodes.join(","), refSummary: "컬럼을 찾을 수 없음" });
         }
       });
 
       rawDataRows.forEach((row, rIdx) => {
         const respId = idCol === "__ROW__" ? `Row #${rIdx + 2}` : String(row[idCol] ?? `Row #${rIdx + 2}`);
-
         parsedRules.forEach(rule => {
-          if (!rule.matchedCols || rule.matchedCols.length === 0) return;
-
-          const { passed: isBaseMet, refSummary } = evaluateBaseCondition(rule.baseExpr, row);
+          if (!rule.matchedCols || !rule.matchedCols.length) return;
+          const { passed: isBase, refSummary } = evalBase(rule.baseExpr, row);
 
           if (rule.qType === "SINGLE" || rule.qType === "GRID_SINGLE" || rule.qType === "OPEN") {
-            const colName = rule.matchedCols[0];
-            const rawVal = String(row[colName] ?? "").trim();
-
-            if (isBaseMet) {
-              if (rawVal === "") {
-                validationErrors.push({ respId, ruleId: rule.ruleId, rawCol: colName, errorType: "MISSING", baseExpr: rule.baseExpr, actualVal: "(빈값)", validCodes: formatValidSpec(rule), refSummary });
-                errorRespSet.add(respId);
-              } else if (rule.qType !== "OPEN" && rule.validCodes.length > 0) {
-                const isCodeValid = rule.validCodes.includes(rawVal);
-                const isRangeValid = rule.numericRange && !isNaN(Number(rawVal)) && Number(rawVal) >= rule.numericRange.min && Number(rawVal) <= rule.numericRange.max;
-                if (!isCodeValid && !isRangeValid) {
-                  validationErrors.push({ respId, ruleId: rule.ruleId, rawCol: colName, errorType: "OUT_OF_RANGE", baseExpr: rule.baseExpr, actualVal: rawVal, validCodes: formatValidSpec(rule), refSummary });
-                  errorRespSet.add(respId);
-                }
-              }
-            } else {
-              if (rawVal !== "") {
-                validationErrors.push({ respId, ruleId: rule.ruleId, rawCol: colName, errorType: "SKIP_ERROR", baseExpr: rule.baseExpr, actualVal: rawVal, validCodes: "빈값이어야 함 (Skip)", refSummary });
-                errorRespSet.add(respId);
-              }
-            }
-          }
-          else if (rule.qType === "MULTI" || rule.qType === "GRID_MULTI") {
-            const selectedCodes = [];
-            const invalidEntries = [];
-
-            rule.matchedCols.forEach(col => {
-              const val = String(row[col] ?? "").trim();
-              if (val === "" || val === "0") return;
-
-              const suffixMatch = col.trim().match(/_(\d+)$/);
-              const suffixCode = suffixMatch ? suffixMatch[1] : val;
-
-              if (suffixMatch) {
-                if (val === "1" || val === suffixCode) selectedCodes.push(suffixCode);
-                else invalidEntries.push(`${col}=${val}`);
-              } else { selectedCodes.push(val); }
+            const col = rule.matchedCols[0], val = String(row[col] ?? "").trim();
+            if (isBase) {
+              if (val === "") { validationErrors.push({ respId, ruleId: rule.ruleId, rawCol: col, errorType: "MISSING", baseExpr: rule.baseExpr, actualVal: "(빈값)", validCodes: rule.validCodes.join(","), refSummary }); errSet.add(respId); }
+              else if (rule.qType !== "OPEN" && rule.validCodes.length && !rule.validCodes.includes(val)) { validationErrors.push({ respId, ruleId: rule.ruleId, rawCol: col, errorType: "OUT_OF_RANGE", baseExpr: rule.baseExpr, actualVal: val, validCodes: rule.validCodes.join(","), refSummary }); errSet.add(respId); }
+            } else if (val !== "") { validationErrors.push({ respId, ruleId: rule.ruleId, rawCol: col, errorType: "SKIP_ERROR", baseExpr: rule.baseExpr, actualVal: val, validCodes: "빈값이어야 함 (Skip)", refSummary }); errSet.add(respId); }
+          } else if (rule.qType === "MULTI" || rule.qType === "GRID_MULTI") {
+            let sel = [], inv = [];
+            rule.matchedCols.forEach(c => {
+              const val = String(row[c] ?? "").trim(); if (!val || val === "0") return;
+              const sf = c.trim().match(/_(\d+)$/);
+              if (sf) { if (val === "1" || val === sf[1] || rule.qType === "OPEN") sel.push(sf[1]); else inv.push(`${c}=${val}`); }
+              else sel.push(val);
             });
-
-            const colRangeLabel = formatColSummary(rule.matchedCols);
-
-            if (isBaseMet) {
-              if (selectedCodes.length === 0 && invalidEntries.length === 0) {
-                validationErrors.push({ respId, ruleId: rule.ruleId, rawCol: colRangeLabel, errorType: "MISSING", baseExpr: rule.baseExpr, actualVal: "(선택 없음)", validCodes: formatValidSpec(rule), refSummary });
-                errorRespSet.add(respId);
-              }
-              if (invalidEntries.length > 0) {
-                validationErrors.push({ respId, ruleId: rule.ruleId, rawCol: colRangeLabel, errorType: "OUT_OF_RANGE", baseExpr: rule.baseExpr, actualVal: invalidEntries.join(", "), validCodes: "0, 1 (또는 해당 보기 코드)", refSummary });
-                errorRespSet.add(respId);
-              }
-            } else {
-              if (selectedCodes.length > 0 || invalidEntries.length > 0) {
-                validationErrors.push({ respId, ruleId: rule.ruleId, rawCol: colRangeLabel, errorType: "SKIP_ERROR", baseExpr: rule.baseExpr, actualVal: selectedCodes.length > 0 ? `선택됨: ${selectedCodes.join(",")}` : invalidEntries.join(","), validCodes: "모두 빈값이어야 함 (Skip)", refSummary });
-                errorRespSet.add(respId);
-              }
+            const colLbl = rule.matchedCols.length > 3 ? `${rule.matchedCols[0]}~${rule.matchedCols.length}개` : rule.matchedCols.join(",");
+            if (isBase) {
+              if (!sel.length && !inv.length) { validationErrors.push({ respId, ruleId: rule.ruleId, rawCol: colLbl, errorType: "MISSING", baseExpr: rule.baseExpr, actualVal: "(선택 없음)", validCodes: rule.validCodes.join(","), refSummary }); errSet.add(respId); }
+              if (inv.length && rule.qType !== "OPEN") { validationErrors.push({ respId, ruleId: rule.ruleId, rawCol: colLbl, errorType: "OUT_OF_RANGE", baseExpr: rule.baseExpr, actualVal: inv.join(","), validCodes: "0, 1 (또는 코드)", refSummary }); errSet.add(respId); }
+            } else if (sel.length || inv.length) { validationErrors.push({ respId, ruleId: rule.ruleId, rawCol: colLbl, errorType: "SKIP_ERROR", baseExpr: rule.baseExpr, actualVal: sel.join(",") || inv.join(","), validCodes: "모두 빈값이어야 함", refSummary }); errSet.add(respId); }
+          } else if (rule.qType === "RANKING") {
+            const { optionCols, rankOrderCols } = rule.rankingMeta;
+            const optMap = {}; optionCols.forEach(o => { const val = String(row[o.col] ?? "").trim(); if (val && val !== "0") optMap[o.code] = val; });
+            const ords = []; rankOrderCols.forEach(r => { const val = String(row[r.col] ?? "").trim(); ords.push({ ...r, val }); });
+            const filled = ords.filter(e => e.val && e.val !== "0");
+            const colLbl = rule.matchedCols.length > 3 ? `${rule.matchedCols[0]}~${rule.matchedCols.length}개` : rule.matchedCols.join(",");
+            if (!isBase) {
+              if (Object.keys(optMap).length || filled.length) { validationErrors.push({ respId, ruleId: rule.ruleId, rawCol: colLbl, errorType: "SKIP_ERROR", baseExpr: rule.baseExpr, actualVal: filled.map(e=>`${e.col}=${e.val}`).join(","), validCodes: "빈값이어야 함", refSummary }); errSet.add(respId); }
+              return;
             }
-          }
-          else if (rule.qType === "RANKING") {
-            validateRankingRule(rule, row, respId, isBaseMet, refSummary, errorRespSet);
-          }
-        });
-      });
-
-      updateDashboard(errorRespSet.size);
-    }
-
-    function validateRankingRule(rule, row, respId, isBaseMet, refSummary, errorRespSet) {
-      const { optionCols, rankOrderCols } = rule.rankingMeta;
-      const colLabel = formatColSummary(rule.matchedCols);
-
-      const optionRankMap = {};
-      optionCols.forEach(({ code, col }) => {
-        const val = String(row[col] ?? "").trim();
-        if (val !== "" && val !== "0") optionRankMap[code] = val;
-      });
-
-      const orderEntries = [];
-      rankOrderCols.forEach(({ rank, suffix, col }) => {
-        const val = String(row[col] ?? "").trim();
-        orderEntries.push({ rank, suffix, col, val });
-      });
-
-      const filledOrderEntries = orderEntries.filter(e => e.val !== "" && e.val !== "0");
-      const optionRankCount = Object.keys(optionRankMap).length;
-
-      if (!isBaseMet) {
-        if (optionRankCount > 0 || filledOrderEntries.length > 0) {
-          const actualSummary = [...filledOrderEntries.map(e => `${e.col}=${e.val}`), ...Object.entries(optionRankMap).map(([c, r]) => `${rule.parentVar}_${c}=${r}`)].join(", ");
-          validationErrors.push({ respId, ruleId: rule.ruleId, rawCol: colLabel, errorType: "SKIP_ERROR", baseExpr: rule.baseExpr, actualVal: actualSummary, validCodes: "빈값이어야 함 (Skip)", refSummary });
-          errorRespSet.add(respId);
-        }
-        return;
-      }
-
-      if (optionRankCount === 0 && filledOrderEntries.length === 0) {
-        validationErrors.push({ respId, ruleId: rule.ruleId, rawCol: colLabel, errorType: "MISSING", baseExpr: rule.baseExpr, actualVal: "(순위 응답 없음)", validCodes: formatValidSpec(rule), refSummary });
-        errorRespSet.add(respId);
-        return;
-      }
-
-      if (rule.validCodes.length > 0) {
-        filledOrderEntries.forEach(e => {
-          if (!rule.validCodes.includes(e.val)) {
-            validationErrors.push({ respId, ruleId: rule.ruleId, rawCol: e.col, errorType: "OUT_OF_RANGE", baseExpr: rule.baseExpr, actualVal: `${e.col}=${e.val}`, validCodes: formatValidSpec(rule), refSummary });
-            errorRespSet.add(respId);
+            if (!Object.keys(optMap).length && !filled.length) { validationErrors.push({ respId, ruleId: rule.ruleId, rawCol: colLbl, errorType: "MISSING", baseExpr: rule.baseExpr, actualVal: "(없음)", validCodes: rule.validCodes.join(","), refSummary }); errSet.add(respId); return; }
+            if (rule.validCodes.length) filled.forEach(e => { if (!rule.validCodes.includes(e.val)) { validationErrors.push({ respId, ruleId: rule.ruleId, rawCol: e.col, errorType: "OUT_OF_RANGE", baseExpr: rule.baseExpr, actualVal: `${e.col}=${e.val}`, validCodes: rule.validCodes.join(","), refSummary }); errSet.add(respId); } });
+            
+            const mm = [], seen = new Set();
+            filled.forEach(e => { if (seen.has(e.val)) mm.push(`중복(${e.col}=${e.val})`); seen.add(e.val); });
+            if (optionCols.length && rankOrderCols.length) {
+              filled.forEach(e => {
+                // Fix 1: 순위형 컬럼에 rank(1,2,3)가 아닌 보기코드 자체(val)가 저장되어 있어도 에러가 나지 않도록 유연한 대조 적용
+                const rec = String(optMap[e.val] || "");
+                if (rec !== String(e.rank) && rec !== String(e.val) && rec !== "1") mm.push(`불일치(${e.col}=${e.val} vs 보기컬럼=${rec||'빈값'})`);
+              });
+            }
+            if (mm.length) { validationErrors.push({ respId, ruleId: rule.ruleId, rawCol: colLbl, errorType: "RANK_MISMATCH", baseExpr: rule.baseExpr, actualVal: mm.join(" / "), validCodes: "순위값 일치 필수", refSummary }); errSet.add(respId); }
           }
         });
-      }
-
-      const mismatchReasons = [];
-      const seenCodes = new Set();
-      filledOrderEntries.forEach(e => {
-        if (seenCodes.has(e.val)) mismatchReasons.push(`중복 순위 코드(${e.col}=${e.val})`);
-        seenCodes.add(e.val);
       });
-
-      for (let i = 0; i < orderEntries.length; i++) {
-        const currEmpty = orderEntries[i].val === "" || orderEntries[i].val === "0";
-        const laterFilled = orderEntries.slice(i + 1).some(x => x.val !== "" && x.val !== "0");
-        if (currEmpty && laterFilled) mismatchReasons.push(`${orderEntries[i].col} 누락`);
-      }
-
-      if (optionCols.length > 0 && rankOrderCols.length > 0) {
-        if (optionRankCount !== filledOrderEntries.length) mismatchReasons.push(`개수 불일치(보기컬럼 ${optionRankCount}개 vs 순위컬럼 ${filledOrderEntries.length}개)`);
-        filledOrderEntries.forEach(e => {
-          const recordedRankInOptionCol = optionRankMap[e.val];
-          if (String(recordedRankInOptionCol) !== String(e.rank)) mismatchReasons.push(`${e.col}=${e.val}이나 ${rule.parentVar}_${e.val}=${recordedRankInOptionCol || '빈값'}`);
-        });
-      }
-
-      if (mismatchReasons.length > 0) {
-        validationErrors.push({ respId, ruleId: rule.ruleId, rawCol: colLabel, errorType: "RANK_MISMATCH", baseExpr: rule.baseExpr, actualVal: mismatchReasons.join(" / "), validCodes: `${rule.parentVar}_1~N 순위값과 fst/snd/trd 일치 필수`, refSummary });
-        errorRespSet.add(respId);
-      }
-    }
-
-    function formatColSummary(cols) {
-      if (!cols || cols.length === 0) return "미매칭";
-      if (cols.length <= 3) return cols.join(", ");
-      return `${cols[0]} ~ ${cols[cols.length - 1]} (${cols.length}개)`;
-    }
-
-    function formatValidSpec(rule) {
-      if (rule.numericRange) return `${rule.validCodes.join(", ")} (또는 ${rule.numericRange.min}~${rule.numericRange.max})`;
-      if (rule.validCodes.length > 6) return `${rule.validCodes[0]} ~ ${rule.validCodes[rule.validCodes.length - 1]} (총 ${rule.validCodes.length}개)`;
-      return rule.validCodes.join(", ") || "자유응답";
-    }
-
-    function updateDashboard(errorRespCount) {
-      const totalResp = rawDataRows.length;
-      const cleanRate = totalResp > 0 ? (((totalResp - errorRespCount) / totalResp) * 100).toFixed(1) : "0.0";
-
-      document.getElementById('kpiTotalResp').textContent = totalResp.toLocaleString();
-      document.getElementById('kpiTotalVars').textContent = parsedRules.length.toLocaleString();
-      document.getElementById('kpiTotalErrors').textContent = validationErrors.length.toLocaleString();
-      document.getElementById('kpiErrorResp').textContent = errorRespCount.toLocaleString();
-      document.getElementById('kpiCleanRate').textContent = `${cleanRate}%`;
-
-      document.getElementById('tabErrorCount').textContent = validationErrors.length.toLocaleString();
-      document.getElementById('tabLogicCount').textContent = parsedRules.length.toLocaleString();
-
-      document.getElementById('kpiSection').classList.remove('hidden');
-      document.getElementById('resultSection').classList.remove('hidden');
+      const tot = rawDataRows.length;
+      document.getElementById('kpiTotalResp').textContent = tot; document.getElementById('kpiTotalVars').textContent = parsedRules.length;
+      document.getElementById('kpiTotalErrors').textContent = validationErrors.length; document.getElementById('kpiErrorResp').textContent = errSet.size;
+      document.getElementById('kpiCleanRate').textContent = tot ? (((tot - errSet.size) / tot) * 100).toFixed(1) + '%' : '0%';
+      document.getElementById('tabErrorCount').textContent = validationErrors.length; document.getElementById('tabLogicCount').textContent = parsedRules.length;
+      document.getElementById('kpiSection').classList.remove('hidden'); document.getElementById('resultSection').classList.remove('hidden');
       document.getElementById('btnDownloadReport').classList.remove('hidden');
-
-      renderErrorTable();
-      renderLogicTable();
+      renderErrorTable(); renderLogicTable();
     }
 
     function renderErrorTable() {
-      const tbody = document.getElementById('errorTableBody');
-      const typeFilter = document.getElementById('filterErrorType').value;
-      const searchStr = document.getElementById('filterSearch').value.toLowerCase().trim();
-
-      const filtered = validationErrors.filter(e => {
-        if (typeFilter !== "ALL" && e.errorType !== typeFilter) return false;
-        if (searchStr && !e.ruleId.toLowerCase().includes(searchStr) && !e.respId.toLowerCase().includes(searchStr) && !e.rawCol.toLowerCase().includes(searchStr)) return false;
-        return true;
-      });
-
-      if (filtered.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="8" class="py-10 text-center text-slate-400 font-medium">조건에 해당하는 오류가 없습니다.</td></tr>`;
-        return;
-      }
-
-      const badgeStyles = { MISSING: "bg-red-100 text-red-700", SKIP_ERROR: "bg-amber-100 text-amber-800", OUT_OF_RANGE: "bg-purple-100 text-purple-700", RANK_MISMATCH: "bg-pink-100 text-pink-700", COL_NOT_FOUND: "bg-slate-200 text-slate-700" };
-      const badgeLabels = { MISSING: "응답 누락 (Missing)", SKIP_ERROR: "스킵 위반 (Over-punch)", OUT_OF_RANGE: "범위 위반 (Out of Range)", RANK_MISMATCH: "순위 불일치 (Rank Error)", COL_NOT_FOUND: "컬럼 미매칭" };
-
-      tbody.innerHTML = filtered.slice(0, 1000).map(e => `
-        <tr class="hover:bg-slate-50">
-          <td class="py-2 px-3 font-semibold text-slate-800">${escapeHtml(e.respId)}</td>
-          <td class="py-2 px-3 font-mono font-bold text-blue-600">${escapeHtml(e.ruleId)}</td>
-          <td class="py-2 px-3 font-mono text-slate-600">${escapeHtml(e.rawCol)}</td>
-          <td class="py-2 px-3"><span class="px-2 py-0.5 rounded text-[11px] font-semibold ${badgeStyles[e.errorType] || ''}">${badgeLabels[e.errorType] || e.errorType}</span></td>
-          <td class="py-2 px-3 font-mono text-slate-700">${escapeHtml(e.baseExpr)}</td>
-          <td class="py-2 px-3 font-mono font-bold text-red-600">${escapeHtml(e.actualVal)}</td>
-          <td class="py-2 px-3 text-slate-600">${escapeHtml(e.validCodes)}</td>
-          <td class="py-2 px-3 font-mono text-slate-500">${escapeHtml(e.refSummary)}</td>
-        </tr>
-      `).join("");
+      const type = document.getElementById('filterErrorType').value, search = document.getElementById('filterSearch').value.toLowerCase().trim();
+      const flt = validationErrors.filter(e => (type === "ALL" || e.errorType === type) && (!search || e.ruleId.toLowerCase().includes(search) || e.respId.toLowerCase().includes(search) || e.rawCol.toLowerCase().includes(search)));
+      const styles = { MISSING: "bg-red-100 text-red-700", SKIP_ERROR: "bg-amber-100 text-amber-800", OUT_OF_RANGE: "bg-purple-100 text-purple-700", RANK_MISMATCH: "bg-pink-100 text-pink-700", COL_NOT_FOUND: "bg-slate-200 text-slate-700" };
+      document.getElementById('errorTableBody').innerHTML = flt.slice(0, 1000).map(e => `<tr class="hover:bg-slate-50"><td class="py-2 px-3 font-semibold">${e.respId}</td><td class="py-2 px-3 font-mono font-bold text-blue-600">${e.ruleId}</td><td class="py-2 px-3 font-mono text-slate-600">${e.rawCol}</td><td class="py-2 px-3"><span class="px-2 py-0.5 rounded text-[11px] font-semibold ${styles[e.errorType] || ''}">${e.errorType}</span></td><td class="py-2 px-3 font-mono text-slate-700">${e.baseExpr}</td><td class="py-2 px-3 font-mono font-bold text-red-600">${e.actualVal}</td><td class="py-2 px-3 text-slate-600">${e.validCodes}</td><td class="py-2 px-3 font-mono text-slate-500">${e.refSummary}</td></tr>`).join("") || `<tr><td colspan="8" class="py-10 text-center text-slate-400">오류가 없습니다.</td></tr>`;
     }
 
     function renderLogicTable() {
-      const tbody = document.getElementById('logicTableBody');
-      tbody.innerHTML = parsedRules.map(r => {
-        const matched = r.matchedCols && r.matchedCols.length > 0;
-        return `
-          <tr class="hover:bg-slate-50">
-            <td class="py-2 px-3 font-mono font-bold text-blue-600">${escapeHtml(r.ruleId)}</td>
-            <td class="py-2 px-3 font-mono text-slate-600">${escapeHtml(r.parentVar)}</td>
-            <td class="py-2 px-3"><span class="px-2 py-0.5 rounded bg-slate-100 text-slate-700 font-mono text-[11px] font-semibold">${escapeHtml(r.qType)}</span></td>
-            <td class="py-2 px-3 font-mono text-emerald-700 font-medium">${escapeHtml(r.baseExpr)}</td>
-            <td class="py-2 px-3 text-slate-600">${escapeHtml(formatValidSpec(r))}</td>
-            <td class="py-2 px-3 font-mono ${matched ? 'text-slate-800' : 'text-red-600 font-bold'}">${matched ? escapeHtml(formatColSummary(r.matchedCols)) : '⚠️ 미매칭'}</td>
-            <td class="py-2 px-3 text-slate-500 truncate max-w-xs" title="${escapeHtml(r.label)}">${escapeHtml(r.label)}</td>
-          </tr>
-        `;
+      document.getElementById('logicTableBody').innerHTML = parsedRules.map(r => {
+        const m = r.matchedCols && r.matchedCols.length;
+        return `<tr class="hover:bg-slate-50"><td class="py-2 px-3 font-mono font-bold text-blue-600">${r.ruleId}</td><td class="py-2 px-3 font-mono text-slate-600">${r.parentVar}</td><td class="py-2 px-3"><span class="px-2 py-0.5 rounded bg-slate-100 text-[11px]">${r.qType}</span></td><td class="py-2 px-3 font-mono text-emerald-700 font-medium">${r.baseExpr}</td><td class="py-2 px-3 text-slate-600">${r.validCodes.join(",") || "자유응답"}</td><td class="py-2 px-3 font-mono ${m ? 'text-slate-800' : 'text-red-600 font-bold'}">${m ? r.matchedCols.length > 3 ? `${r.matchedCols[0]}~${r.matchedCols.length}개` : r.matchedCols.join(",") : '미매칭'}</td><td class="py-2 px-3 text-slate-500 truncate max-w-xs">${r.label}</td></tr>`;
       }).join("");
     }
 
-    function switchTab(tab) {
-      const isErrors = tab === 'errors';
-      document.getElementById('tabErrorsContent').classList.toggle('hidden', !isErrors);
-      document.getElementById('tabLogicContent').classList.toggle('hidden', isErrors);
-      document.getElementById('tabBtnErrors').className = isErrors ? "py-3.5 text-sm font-bold border-b-2 border-blue-600 text-blue-600" : "py-3.5 text-sm font-medium border-b-2 border-transparent text-slate-500 hover:text-slate-800";
-      document.getElementById('tabBtnLogic').className = !isErrors ? "py-3.5 text-sm font-bold border-b-2 border-blue-600 text-blue-600" : "py-3.5 text-sm font-medium border-b-2 border-transparent text-slate-500 hover:text-slate-800";
+    function switchTab(t) {
+      const e = t === 'errors';
+      document.getElementById('tabErrorsContent').classList.toggle('hidden', !e); document.getElementById('tabLogicContent').classList.toggle('hidden', e);
+      document.getElementById('tabBtnErrors').className = e ? "py-3.5 text-sm font-bold border-b-2 border-blue-600 text-blue-600" : "py-3.5 text-sm font-medium border-b-2 border-transparent text-slate-500";
+      document.getElementById('tabBtnLogic').className = !e ? "py-3.5 text-sm font-bold border-b-2 border-blue-600 text-blue-600" : "py-3.5 text-sm font-medium border-b-2 border-transparent text-slate-500";
     }
 
     function exportErrorReport() {
       const wb = XLSX.utils.book_new();
-      const errorSheetRows = validationErrors.map(e => ({ "응답자 ID": e.respId, "검증 문항(Rule ID)": e.ruleId, "Rawdata 대상 컬럼": e.rawCol, "오류 유형": e.errorType, "적용된 Base 조건": e.baseExpr, "실제 입력값": e.actualVal, "허용 기준": e.validCodes, "참조 변수 실제값": e.refSummary }));
-      const logicSheetRows = parsedRules.map(r => ({ "검증 단위 ID": r.ruleId, "원본 문항": r.parentVar, "판별 유형": r.qType, "원본 문항 유형": r.qTypeRaw, "결합 Base 조건": r.baseExpr, "유효 보기 코드": formatValidSpec(r), "매칭된 Rawdata 컬럼": r.matchedCols ? formatColSummary(r.matchedCols) : "미매칭", "문항/행 설명": r.label }));
-      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(errorSheetRows.length ? errorSheetRows : [{ "결과": "발견된 오류가 없습니다." }]), "오류_상세_내역");
-      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(logicSheetRows), "파싱된_로직_규칙");
-      XLSX.writeFile(wb, `Logic_Validation_Report_${new Date().toISOString().slice(0,10)}.xlsx`);
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(validationErrors.map(e => ({ "응답자 ID": e.respId, "검증 문항(Rule ID)": e.ruleId, "컬럼": e.rawCol, "오류 유형": e.errorType, "Base": e.baseExpr, "입력값": e.actualVal, "허용 기준": e.validCodes, "참조 변수값": e.refSummary }))), "오류_상세_내역");
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(parsedRules.map(r => ({ "ID": r.ruleId, "원본": r.parentVar, "유형": r.qType, "Base": r.baseExpr, "코드": r.validCodes.join(","), "매칭": r.matchedCols ? r.matchedCols.join(",") : "미매칭", "설명": r.label }))), "파싱_규칙");
+      XLSX.writeFile(wb, `Logic_Report_${new Date().toISOString().slice(0,10)}.xlsx`);
     }
-
-    function escapeRegex(str) { return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
-    function escapeHtml(str) { return String(str ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;"); }
   </script>
 </body>
 </html>
