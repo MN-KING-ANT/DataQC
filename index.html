@@ -14,9 +14,9 @@
       <div>
         <h1 class="text-xl font-bold text-slate-900 flex items-center gap-2">
           <span class="bg-blue-600 text-white px-2.5 py-1 rounded-md text-sm font-extrabold">QC</span>
-          Survey Rawdata QC
+          설문 Rawdata 로직 검증기
         </h1>
-        <p class="text-xs text-slate-500 mt-0.5">Rawdata 로직 검증</p>
+        <p class="text-xs text-slate-500 mt-0.5">QA 검증용 더미 데이터(고의 에러 포함) 자동 생성기 탑재 버젼</p>
       </div>
       <div class="flex items-center gap-3">
         <button id="btnDownloadReport" onclick="exportErrorReport()" class="hidden bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-medium px-4 py-2 rounded-lg shadow-sm transition">오류 리포트 다운로드 (.xlsx)</button>
@@ -27,7 +27,7 @@
 
   <main class="max-w-7xl mx-auto px-6 py-6 space-y-6">
     <section class="grid grid-cols-1 md:grid-cols-2 gap-6">
-      <div class="bg-white border-2 border-dashed border-slate-300 rounded-xl p-6 text-center hover:border-blue-500 transition cursor-pointer relative">
+      <div class="bg-white border-2 border-dashed border-slate-300 rounded-xl p-6 text-center hover:border-blue-500 transition cursor-pointer relative flex flex-col justify-center">
         <input type="file" id="logicFileInput" accept=".xlsx,.xls,.csv" class="absolute inset-0 opacity-0 cursor-pointer" />
         <div class="space-y-2">
           <div class="w-12 h-12 bg-blue-50 text-blue-600 rounded-full flex items-center justify-center mx-auto font-bold text-lg">1</div>
@@ -35,7 +35,7 @@
           <p id="logicFileName" class="text-sm font-semibold text-blue-600 pt-1">파일을 선택하거나 드래그하세요</p>
         </div>
       </div>
-      <div class="bg-white border-2 border-dashed border-slate-300 rounded-xl p-6 text-center hover:border-blue-500 transition cursor-pointer relative">
+      <div class="bg-white border-2 border-dashed border-slate-300 rounded-xl p-6 text-center hover:border-blue-500 transition cursor-pointer relative flex flex-col justify-center">
         <input type="file" id="rawFileInput" accept=".xlsx,.xls,.csv" class="absolute inset-0 opacity-0 cursor-pointer" />
         <div class="space-y-2">
           <div class="w-12 h-12 bg-indigo-50 text-indigo-600 rounded-full flex items-center justify-center mx-auto font-bold text-lg">2</div>
@@ -52,7 +52,14 @@
           <select id="idColSelect" class="text-sm border border-slate-300 rounded-lg px-3 py-1.5 bg-slate-50"><option value="__ROW__">엑셀 행 번호</option></select>
         </div>
       </div>
-      <button id="btnRunValidation" onclick="runValidation()" disabled class="bg-blue-600 disabled:bg-slate-300 hover:bg-blue-700 text-white font-semibold text-sm px-6 py-2.5 rounded-lg shadow-sm transition">검증 실행</button>
+      <div class="flex gap-2">
+        <button id="btnGenerateDummy" onclick="generateDummyData()" disabled class="bg-purple-600 disabled:bg-slate-300 hover:bg-purple-700 text-white font-semibold text-sm px-5 py-2.5 rounded-lg shadow-sm transition">
+          테스트용 더미 데이터 생성
+        </button>
+        <button id="btnRunValidation" onclick="runValidation()" disabled class="bg-blue-600 disabled:bg-slate-300 hover:bg-blue-700 text-white font-semibold text-sm px-6 py-2.5 rounded-lg shadow-sm transition">
+          검증 실행
+        </button>
+      </div>
     </section>
 
     <section id="kpiSection" class="hidden grid grid-cols-2 md:grid-cols-5 gap-4">
@@ -72,6 +79,7 @@
         <div class="flex flex-wrap gap-2">
           <select id="filterErrorType" onchange="renderErrorTable()" class="text-xs border border-slate-300 rounded-lg px-3 py-2">
             <option value="ALL">전체 오류 유형</option>
+            <option value="FORMULA_ERROR">Base 수식 오류 (Formula Error)</option>
             <option value="MISSING">응답 누락 (Missing)</option>
             <option value="SKIP_ERROR">스킵 위반 (Skip Error)</option>
             <option value="OUT_OF_RANGE">범위 위반 (Out of Range)</option>
@@ -127,6 +135,8 @@
           rawLogicRows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: "" });
           document.getElementById('logicFileName').textContent = `✅ ${file.name} 로드됨`;
           parseLogicRows(rawLogicRows);
+          // 로직이 로드되면 더미 데이터 생성 버튼 활성화
+          document.getElementById('btnGenerateDummy').disabled = false;
         } else {
           rawDataRows = XLSX.utils.sheet_to_json(ws, { defval: "" });
           rawDataHeaders = rawDataRows.length ? Object.keys(rawDataRows[0]) : [];
@@ -210,6 +220,88 @@
       });
     }
 
+    // ==========================================
+    // 더미 데이터 자동 생성 로직 (스트레스 테스트용)
+    // ==========================================
+    function generateDummyData() {
+      if (!parsedRules.length) return alert("로직 가이드를 먼저 업로드해주세요.");
+
+      const headers = new Set(["iiRepSerial"]);
+      
+      // 1. 필요한 모든 컬럼명 추출
+      parsedRules.forEach(r => {
+        const v = r.parentVar.trim();
+        if (r.qType === "SINGLE" || r.qType === "OPEN") headers.add(v);
+        else if (r.qType === "GRID_SINGLE") headers.add(`${v}${r.rowCode}`);
+        else if (r.qType === "MULTI") {
+           if(r.validCodes.length) r.validCodes.forEach(c => headers.add(`${v}_${c}`));
+           else headers.add(v);
+        }
+        else if (r.qType === "GRID_MULTI") {
+           const prefix = `${v}${r.rowCode}`;
+           if(r.validCodes.length) r.validCodes.forEach(c => headers.add(`${prefix}_${c}`));
+           else headers.add(prefix);
+        }
+        else if (r.qType === "RANKING") {
+           if(r.validCodes.length) r.validCodes.forEach(c => headers.add(`${v}_${c}`));
+           RANK_SUFFIXES.forEach(rs => headers.add(`${v}_${rs.suffix}`));
+        }
+      });
+
+      const headerArr = Array.from(headers);
+      const dummyRows = [];
+
+      // Case 1: 완전 공백 데이터 (Missing / Skip Error 테스트)
+      dummyRows.push({ iiRepSerial: "TEST_01_ALL_BLANK" });
+
+      // Case 2: 모든 값에 999 입력 (Out of Range 테스트)
+      const r2 = { iiRepSerial: "TEST_02_ALL_999" };
+      headerArr.forEach(h => { if(h !== "iiRepSerial") r2[h] = "999"; });
+      dummyRows.push(r2);
+
+      // Case 3~20: 무작위 교란 데이터 (Rank Mismatch, Exclusive, 정상 혼합)
+      for(let i = 3; i <= 20; i++) {
+        const row = { iiRepSerial: `TEST_${String(i).padStart(2, '0')}_RANDOM_FUZZ` };
+        
+        parsedRules.forEach(r => {
+            const v = r.parentVar;
+            const valid = r.validCodes.length ? r.validCodes[Math.floor(Math.random() * r.validCodes.length)] : "1";
+            const rand = Math.random();
+            
+            if (r.qType === "SINGLE" || r.qType === "OPEN") {
+                if(rand > 0.4) row[v] = valid; 
+            } else if (r.qType === "GRID_SINGLE") {
+                if(rand > 0.4) row[`${v}${r.rowCode}`] = valid;
+            } else if (r.qType === "MULTI") {
+                if(rand > 0.4 && r.validCodes.length) {
+                    row[`${v}_${valid}`] = "1";
+                    // 20% 확률로 Exclusive 중복 에러 유발
+                    if(r.exclusiveCodes && r.exclusiveCodes.length && Math.random() < 0.2) {
+                         row[`${v}_${r.exclusiveCodes[0]}`] = "1";
+                    }
+                }
+            } else if (r.qType === "GRID_MULTI") {
+                if(rand > 0.4 && r.validCodes.length) {
+                    row[`${v}${r.rowCode}_${valid}`] = "1";
+                }
+            } else if (r.qType === "RANKING") {
+                if(rand > 0.4) {
+                    row[`${v}_fst`] = valid;
+                    // 30% 확률로 순위 중복 기입 에러 유발
+                    if(Math.random() < 0.3) row[`${v}_snd`] = valid; 
+                    row[`${v}_${valid}`] = "1"; 
+                }
+            }
+        });
+        dummyRows.push(row);
+      }
+
+      const wb = XLSX.utils.book_new();
+      const ws = XLSX.utils.json_to_sheet(dummyRows, { header: headerArr });
+      XLSX.utils.book_append_sheet(wb, ws, "QA_Dummy_Data");
+      XLSX.writeFile(wb, `QA_Test_DummyData_${new Date().toISOString().slice(0,10)}.xlsx`);
+    }
+
     function bindColumnsToRule(rule) {
       const v = rule.parentVar.toLowerCase().trim();
       if (rule.qType === "GRID_SINGLE") {
@@ -249,9 +341,7 @@
       const v = varName.toLowerCase().trim();
       if (!variableValueCache[v]) {
         let vars = [v];
-        // 1) 알파벳 범위 (예: e4_a-l, e4a-l, c16a-p, e52b_a-p) - 언더바 자동 제거 후 매칭
         const rmAlpha = v.match(/^([a-z0-9_]+?)_?([a-z])-([a-z])$/i);
-        // 2) 숫자 범위 (예: c17a_1-13, c17a1-13)
         const rmNum = !rmAlpha ? v.match(/^([a-z0-9_]+?)_?(\d+)-(\d+)$/i) : null;
 
         if (rmAlpha) {
@@ -259,39 +349,35 @@
           const base = rmAlpha[1].replace(/_+$/, "");
           for (let i = rmAlpha[2].charCodeAt(0); i <= rmAlpha[3].charCodeAt(0); i++) {
             const ch = String.fromCharCode(i);
-            vars.push(`${base}${ch}`);
-            vars.push(`${base}_${ch}`);
+            vars.push(`${base}${ch}`); vars.push(`${base}_${ch}`);
           }
         } else if (rmNum) {
           vars = [];
           const base = rmNum[1].replace(/_+$/, "");
           for (let k = Number(rmNum[2]); k <= Number(rmNum[3]); k++) {
-            vars.push(`${base}${k}`);
-            vars.push(`${base}_${k}`);
+            vars.push(`${base}${k}`); vars.push(`${base}_${k}`);
           }
         } else {
-          // 3) 범위 없이 그리드 부모 변수명만 적은 경우 (예: e4>=4, c17>=4) 하위 그리드 행 자동 확장
-          const gridChildren = parsedRules.filter(r =>
-            (r.qType === "GRID_SINGLE" || r.qType === "GRID_MULTI") &&
-            (r.parentVar.toLowerCase() === v || (v === "c17" && r.parentVar.toLowerCase() === "c17a"))
-          );
+          const gridChildren = parsedRules.filter(r => (r.qType === "GRID_SINGLE" || r.qType === "GRID_MULTI") && (r.parentVar.toLowerCase() === v || (v === "c17" && r.parentVar.toLowerCase() === "c17a")));
           if (gridChildren.length > 0) {
             vars = [];
-            gridChildren.forEach(gc => {
-              const rc = gc.rowCode.toLowerCase().trim();
-              const pv = gc.parentVar.toLowerCase().trim();
-              vars.push(`${pv}${rc}`);
-              vars.push(`${pv}_${rc}`);
-            });
+            gridChildren.forEach(gc => { const rc = gc.rowCode.toLowerCase().trim(); const pv = gc.parentVar.toLowerCase().trim(); vars.push(`${pv}${rc}`); vars.push(`${pv}_${rc}`); });
           }
         }
 
         let ex = [], rk = [], sub = [];
         vars.forEach(vc => {
+          const vcNoUnder = vc.replace('_', '');
           if (lowerHeaderMap[vc]) ex.push(lowerHeaderMap[vc]);
-          RANK_SUFFIXES.forEach(rs => { if (lowerHeaderMap[`${vc}_${rs.suffix}`]) rk.push(lowerHeaderMap[`${vc}_${rs.suffix}`]); });
+          else if (lowerHeaderMap[vcNoUnder]) ex.push(lowerHeaderMap[vcNoUnder]);
+
+          RANK_SUFFIXES.forEach(rs => { 
+            if (lowerHeaderMap[`${vc}_${rs.suffix}`]) rk.push(lowerHeaderMap[`${vc}_${rs.suffix}`]); 
+            else if (lowerHeaderMap[`${vcNoUnder}_${rs.suffix}`]) rk.push(lowerHeaderMap[`${vcNoUnder}_${rs.suffix}`]);
+          });
           const rx = new RegExp(`^${vc.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}_(\\d+)$`, 'i');
-          rawDataHeaders.forEach(h => { const m = h.match(rx); if (m) sub.push({ code: m[1], col: h }); });
+          const rxNoUnder = new RegExp(`^${vcNoUnder.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}_(\\d+)$`, 'i');
+          rawDataHeaders.forEach(h => { const m = h.match(rx) || h.match(rxNoUnder); if (m) sub.push({ code: m[1], col: h }); });
         });
         variableValueCache[v] = { ex, rk, sub };
       }
@@ -303,26 +389,22 @@
     }
 
     function evalBase(baseExpr, row) {
-      if (!baseExpr || baseExpr.toLowerCase() === "all") return { passed: true, refSummary: "Base: All" };
+      if (!baseExpr || baseExpr.toLowerCase() === "all") return { passed: true, isError: false, refSummary: "Base: All" };
       const refVars = new Set();
       const js = baseExpr.replace(/\bAND\b/gi, "&&").replace(/\bOR\b/gi, "||").replace(/&+/g, "&&").replace(/\|+/g, "||")
         .replace(/([a-zA-Z0-9_.\-]+)\s*(‡|≠|!=|<>|>=|<=|>|<|=)\s*([0-9,\-\s]+)(\(\s*모두\s*선택\s*\))?/g, (m, v, op, rhs, allMod) => {
           refVars.add(v); const vals = getRespVals(row, v), tgts = [];
           rhs.split(",").forEach(p => { const r = p.trim().match(/^(\d+)\s*-\s*(\d+)$/); if (r) { for (let k = Number(r[1]); k <= Number(r[2]); k++) tgts.push(String(k)); } else if (p.trim()) tgts.push(p.trim()); });
           
-          // (모두 선택) 조건 처리 (예: b1a‡1-16(모두 선택))
           if (allMod) {
             const matchedCount = tgts.filter(t => vals.includes(String(t))).length;
             if (["≠", "!=", "<>", "‡"].includes(op)) return matchedCount < tgts.length ? "true" : "false";
             if (op === "=") return matchedCount === tgts.length ? "true" : "false";
           }
-
           if (op === "=") return vals.some(x => tgts.includes(String(x))) ? "true" : "false";
           if (["≠", "!=", "<>", "‡"].includes(op)) return !vals.some(x => tgts.includes(String(x))) ? "true" : "false";
           
-          // 다중 컬럼/그리드 대소 비교: 응답값 중 하나라도 조건(>=, <=, >, <)을 만족하면 true
-          const nt = Number(rhs.trim());
-          const numVals = vals.map(x => Number(x)).filter(x => !isNaN(x));
+          const nt = Number(rhs.trim()), numVals = vals.map(x => Number(x)).filter(x => !isNaN(x));
           if (!numVals.length || isNaN(nt)) return "false";
           if (op === ">=") return numVals.some(na => na >= nt) ? "true" : "false";
           if (op === "<=") return numVals.some(na => na <= nt) ? "true" : "false";
@@ -330,8 +412,9 @@
           if (op === "<") return numVals.some(na => na < nt) ? "true" : "false";
           return "true";
         });
-      let passed = true; try { passed = Boolean(Function(`"use strict"; return (${js});`)()); } catch(e){}
-      return { passed, refSummary: Array.from(refVars).map(v => `${v}=[${getRespVals(row, v).join(",") || "빈값"}]`).join(", ") };
+      let passed = true, isError = false; 
+      try { passed = Boolean(Function(`"use strict"; return (${js});`)()); } catch(e){ isError = true; }
+      return { passed, isError, refSummary: Array.from(refVars).map(v => `${v}=[${getRespVals(row, v).join(",") || "빈값"}]`).join(", ") };
     }
 
     function runValidation() {
@@ -343,13 +426,19 @@
       parsedRules.forEach(rule => {
         if (!rule.matchedCols || rule.matchedCols.length === 0) {
           validationErrors.push({ respId: "전체(오류)", ruleId: rule.ruleId, rawCol: "미매칭", errorType: "COL_NOT_FOUND", baseExpr: rule.baseExpr, actualVal: "-", validCodes: rule.validCodes.join(","), refSummary: "컬럼을 찾을 수 없음" });
+        } else {
+          const { isError } = evalBase(rule.baseExpr, rawDataRows[0] || {});
+          if (isError) {
+            validationErrors.push({ respId: "전체(오류)", ruleId: rule.ruleId, rawCol: "Base 수식", errorType: "FORMULA_ERROR", baseExpr: rule.baseExpr, actualVal: "-", validCodes: "수식 문법 확인", refSummary: "괄호 안 닫힘, or 대신 쉼표(,) 등 오타" });
+            rule.hasFormulaError = true;
+          }
         }
       });
 
       rawDataRows.forEach((row, rIdx) => {
         const respId = idCol === "__ROW__" ? `Row #${rIdx + 2}` : String(row[idCol] ?? `Row #${rIdx + 2}`);
         parsedRules.forEach(rule => {
-          if (!rule.matchedCols || !rule.matchedCols.length) return;
+          if (!rule.matchedCols || !rule.matchedCols.length || rule.hasFormulaError) return;
           const { passed: isBase, refSummary } = evalBase(rule.baseExpr, row);
 
           if (rule.qType === "SINGLE" || rule.qType === "GRID_SINGLE" || rule.qType === "OPEN") {
@@ -465,7 +554,7 @@
     function renderErrorTable() {
       const type = document.getElementById('filterErrorType').value, search = document.getElementById('filterSearch').value.toLowerCase().trim();
       const flt = validationErrors.filter(e => (type === "ALL" || e.errorType === type) && (!search || e.ruleId.toLowerCase().includes(search) || e.respId.toLowerCase().includes(search) || e.rawCol.toLowerCase().includes(search)));
-      const styles = { MISSING: "bg-red-100 text-red-700", SKIP_ERROR: "bg-amber-100 text-amber-800", OUT_OF_RANGE: "bg-purple-100 text-purple-700", RANK_MISMATCH: "bg-pink-100 text-pink-700", EXCLUSIVE_ERROR: "bg-orange-100 text-orange-800", COL_NOT_FOUND: "bg-slate-200 text-slate-700" };
+      const styles = { FORMULA_ERROR: "bg-red-600 text-white", MISSING: "bg-red-100 text-red-700", SKIP_ERROR: "bg-amber-100 text-amber-800", OUT_OF_RANGE: "bg-purple-100 text-purple-700", RANK_MISMATCH: "bg-pink-100 text-pink-700", EXCLUSIVE_ERROR: "bg-orange-100 text-orange-800", COL_NOT_FOUND: "bg-slate-200 text-slate-700" };
       document.getElementById('errorTableBody').innerHTML = flt.slice(0, 1000).map(e => `<tr class="hover:bg-slate-50"><td class="py-2 px-3 font-semibold">${e.respId}</td><td class="py-2 px-3 font-mono font-bold text-blue-600">${e.ruleId}</td><td class="py-2 px-3 font-mono text-slate-600">${e.rawCol}</td><td class="py-2 px-3"><span class="px-2 py-0.5 rounded text-[11px] font-semibold ${styles[e.errorType] || ''}">${e.errorType}</span></td><td class="py-2 px-3 font-mono text-slate-700">${e.baseExpr}</td><td class="py-2 px-3 font-mono font-bold text-red-600">${e.actualVal}</td><td class="py-2 px-3 text-slate-600">${e.validCodes}</td><td class="py-2 px-3 font-mono text-slate-500">${e.refSummary}</td></tr>`).join("") || `<tr><td colspan="8" class="py-10 text-center text-slate-400">오류가 없습니다.</td></tr>`;
     }
 
