@@ -16,7 +16,7 @@
           <span class="bg-blue-600 text-white px-2.5 py-1 rounded-md text-sm font-extrabold">QC</span>
           설문 Rawdata 로직 검증기
         </h1>
-        <p class="text-xs text-slate-500 mt-0.5">Multi-Open 동시 지원(텍스트 허용) 및 Exclusive(없음) 자동 배타성 검증 완비</p>
+        <p class="text-xs text-slate-500 mt-0.5">Exclusive 자동 감지 고도화 (오탐률 최소화) 반영 버젼</p>
       </div>
       <div class="flex items-center gap-3">
         <button id="btnDownloadReport" onclick="exportErrorReport()" class="hidden bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-medium px-4 py-2 rounded-lg shadow-sm transition">오류 리포트 다운로드 (.xlsx)</button>
@@ -165,7 +165,6 @@
 
       blocks.forEach(block => {
         const qLow = block.qTypeRaw.toLowerCase();
-        // 개방형(Open) 속성은 별도의 변수로 들고 가고, MULTI와 겹쳐도 MULTI 속성을 우선 적용하도록 설계
         const isOpen = qLow.includes("open") || qLow.includes("numeric"); 
         const isGrid = qLow.includes("grid");
         const isMulti = qLow.includes("multi") || /\bma\b/.test(qLow);
@@ -180,7 +179,8 @@
             if (section === "ROWS" && r.colA) gridItems.push({ code: r.colA, label: r.colB, base: r.colC ? r.colC.replace(/^base\s*:\s*/i, "") : "All" });
             else if (section === "COLS" && r.colA) {
               validCodes.push(r.colA);
-              if (/없음|모름|해당\s*사항|않음|기억\s*안\s*남/i.test(r.colB)) exclusiveCodes.push(String(r.colA));
+              // [수정점] 정교해진 배타성 감지어 적용
+              if (/없음|모름|해당\s*사항|기억\s*안\s*남|기억나지\s*않음|응답하고\s*싶지\s*않음|확인하지\s*않음|찾아보지\s*않음/i.test(r.colB)) exclusiveCodes.push(String(r.colA));
             }
           });
           gridItems.forEach((item, idx) => {
@@ -198,10 +198,10 @@
             if (idx === 0 && r.colC && /^base\s*:/i.test(r.colC)) baseExpr = r.colC.replace(/^base\s*:\s*/i, "");
             if (r.colA) {
               validCodes.push(r.colA);
-              if (/없음|모름|해당\s*사항|않음|기억\s*안\s*남/i.test(r.colB)) exclusiveCodes.push(String(r.colA));
+              // [수정점] 정교해진 배타성 감지어 적용
+              if (/없음|모름|해당\s*사항|기억\s*안\s*남|기억나지\s*않음|응답하고\s*싶지\s*않음|확인하지\s*않음|찾아보지\s*않음/i.test(r.colB)) exclusiveCodes.push(String(r.colA));
             }
           });
-          // Multiple answer(Open) 등 다중응답 속성을 먼저 판별하여 MULTI로 분류 (단, isOpen 속성은 들고 감)
           let detectedType = isRanking ? "RANKING" : (isMulti ? "MULTI" : (isOpen ? "OPEN" : "SINGLE"));
           parsedRules.push({ ruleId: block.varName, parentVar: block.varName, qType: detectedType, qTypeRaw: block.qTypeRaw, baseExpr: baseExpr || "All", isOpen: isOpen, validCodes, exclusiveCodes, label: block.questionText.replace(/\r?\n/g, " ") });
         }
@@ -314,7 +314,6 @@
               const val = String(row[c] ?? "").trim(); if (!val || val === "0") return;
               const sf = c.trim().match(/_(\d+)$/);
               if (sf) { 
-                // isOpen(텍스트 허용)이면 값 자체가 무엇이든 에러가 아님
                 if (val === "1" || val === sf[1] || rule.isOpen) sel.push(sf[1]); 
                 else inv.push(`${c}=${val}`); 
               } else {
