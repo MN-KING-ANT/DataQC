@@ -16,7 +16,7 @@
           <span class="bg-blue-600 text-white px-2.5 py-1 rounded-md text-sm font-extrabold">QC</span>
           설문 Rawdata 로직 검증기
         </h1>
-        <p class="text-xs text-slate-500 mt-0.5">Ranking 코드 저장 구조 호환 및 Multi-Open 텍스트 응답 예외 처리 완비</p>
+        <p class="text-xs text-slate-500 mt-0.5">Ranking 구조(옵션 선택 + fst/snd/trd) 대조 호환 완비 및 예외 처리 반영</p>
       </div>
       <div class="flex items-center gap-3">
         <button id="btnDownloadReport" onclick="exportErrorReport()" class="hidden bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-medium px-4 py-2 rounded-lg shadow-sm transition">오류 리포트 다운로드 (.xlsx)</button>
@@ -193,7 +193,6 @@
             if (idx === 0 && r.colC && /^base\s*:/i.test(r.colC)) baseExpr = r.colC.replace(/^base\s*:\s*/i, "");
             if (r.colA) validCodes.push(r.colA);
           });
-          // Fix 2: Prioritize OPEN over MULTI to prevent Out of Range for text multi-responses
           let detectedType = isOpen ? "OPEN" : (isRanking ? "RANKING" : (isMulti ? "MULTI" : "SINGLE"));
           parsedRules.push({ ruleId: block.varName, parentVar: block.varName, qType: detectedType, qTypeRaw: block.qTypeRaw, baseExpr: baseExpr || "All", validCodes, label: block.questionText.replace(/\r?\n/g, " ") });
         }
@@ -314,28 +313,7 @@
               if (inv.length && rule.qType !== "OPEN") { validationErrors.push({ respId, ruleId: rule.ruleId, rawCol: colLbl, errorType: "OUT_OF_RANGE", baseExpr: rule.baseExpr, actualVal: inv.join(","), validCodes: "0, 1 (또는 코드)", refSummary }); errSet.add(respId); }
             } else if (sel.length || inv.length) { validationErrors.push({ respId, ruleId: rule.ruleId, rawCol: colLbl, errorType: "SKIP_ERROR", baseExpr: rule.baseExpr, actualVal: sel.join(",") || inv.join(","), validCodes: "모두 빈값이어야 함", refSummary }); errSet.add(respId); }
           } else if (rule.qType === "RANKING") {
-            const { optionCols, rankOrderCols } = rule.rankingMeta;
-            const optMap = {}; optionCols.forEach(o => { const val = String(row[o.col] ?? "").trim(); if (val && val !== "0") optMap[o.code] = val; });
-            const ords = []; rankOrderCols.forEach(r => { const val = String(row[r.col] ?? "").trim(); ords.push({ ...r, val }); });
-            const filled = ords.filter(e => e.val && e.val !== "0");
-            const colLbl = rule.matchedCols.length > 3 ? `${rule.matchedCols[0]}~${rule.matchedCols.length}개` : rule.matchedCols.join(",");
-            if (!isBase) {
-              if (Object.keys(optMap).length || filled.length) { validationErrors.push({ respId, ruleId: rule.ruleId, rawCol: colLbl, errorType: "SKIP_ERROR", baseExpr: rule.baseExpr, actualVal: filled.map(e=>`${e.col}=${e.val}`).join(","), validCodes: "빈값이어야 함", refSummary }); errSet.add(respId); }
-              return;
-            }
-            if (!Object.keys(optMap).length && !filled.length) { validationErrors.push({ respId, ruleId: rule.ruleId, rawCol: colLbl, errorType: "MISSING", baseExpr: rule.baseExpr, actualVal: "(없음)", validCodes: rule.validCodes.join(","), refSummary }); errSet.add(respId); return; }
-            if (rule.validCodes.length) filled.forEach(e => { if (!rule.validCodes.includes(e.val)) { validationErrors.push({ respId, ruleId: rule.ruleId, rawCol: e.col, errorType: "OUT_OF_RANGE", baseExpr: rule.baseExpr, actualVal: `${e.col}=${e.val}`, validCodes: rule.validCodes.join(","), refSummary }); errSet.add(respId); } });
-            
-            const mm = [], seen = new Set();
-            filled.forEach(e => { if (seen.has(e.val)) mm.push(`중복(${e.col}=${e.val})`); seen.add(e.val); });
-            if (optionCols.length && rankOrderCols.length) {
-              filled.forEach(e => {
-                // Fix 1: 순위형 컬럼에 rank(1,2,3)가 아닌 보기코드 자체(val)가 저장되어 있어도 에러가 나지 않도록 유연한 대조 적용
-                const rec = String(optMap[e.val] || "");
-                if (rec !== String(e.rank) && rec !== String(e.val) && rec !== "1") mm.push(`불일치(${e.col}=${e.val} vs 보기컬럼=${rec||'빈값'})`);
-              });
-            }
-            if (mm.length) { validationErrors.push({ respId, ruleId: rule.ruleId, rawCol: colLbl, errorType: "RANK_MISMATCH", baseExpr: rule.baseExpr, actualVal: mm.join(" / "), validCodes: "순위값 일치 필수", refSummary }); errSet.add(respId); }
+            validateRankingRule(rule, row, respId, isBase, refSummary, errSet);
           }
         });
       });
@@ -347,6 +325,94 @@
       document.getElementById('kpiSection').classList.remove('hidden'); document.getElementById('resultSection').classList.remove('hidden');
       document.getElementById('btnDownloadReport').classList.remove('hidden');
       renderErrorTable(); renderLogicTable();
+    }
+
+    function validateRankingRule(rule, row, respId, isBaseMet, refSummary, errorRespSet) {
+      const { optionCols, rankOrderCols } = rule.rankingMeta;
+      const colLabel = formatColSummary(rule.matchedCols);
+
+      // 선생님이 짚어주신 로직: a3_1~10 같은 컬럼은 "해당 보기가 선택되었는지"만 저장(순위 정보 없음)
+      const optMap = {}; 
+      optionCols.forEach(o => { 
+        const val = String(row[o.col] ?? "").trim(); 
+        if (val && val !== "0") optMap[o.code] = val; // 선택된 옵션 코드 기록
+      });
+
+      // a3_fst~trd 같은 순위 컬럼은 "어떤 코드가 그 순위에 배정되었는지" 저장
+      const ords = []; 
+      rankOrderCols.forEach(r => { 
+        const val = String(row[r.col] ?? "").trim(); 
+        ords.push({ ...r, val }); 
+      });
+      const filled = ords.filter(e => e.val && e.val !== "0");
+      const optionRankCount = Object.keys(optMap).length;
+
+      if (!isBaseMet) {
+        if (optionRankCount > 0 || filled.length > 0) {
+          const actualSummary = [...filled.map(e => `${e.col}=${e.val}`), ...Object.entries(optMap).map(([c, r]) => `${rule.parentVar}_${c}=${r}`)].join(", ");
+          validationErrors.push({ respId, ruleId: rule.ruleId, rawCol: colLabel, errorType: "SKIP_ERROR", baseExpr: rule.baseExpr, actualVal: actualSummary, validCodes: "빈값이어야 함 (Skip)", refSummary });
+          errorRespSet.add(respId);
+        }
+        return;
+      }
+
+      if (optionRankCount === 0 && filled.length === 0) {
+        validationErrors.push({ respId, ruleId: rule.ruleId, rawCol: colLabel, errorType: "MISSING", baseExpr: rule.baseExpr, actualVal: "(순위 응답 없음)", validCodes: formatValidSpec(rule), refSummary });
+        errorRespSet.add(respId);
+        return;
+      }
+
+      if (rule.validCodes.length > 0) {
+        filled.forEach(e => {
+          if (!rule.validCodes.includes(e.val)) {
+            validationErrors.push({ respId, ruleId: rule.ruleId, rawCol: e.col, errorType: "OUT_OF_RANGE", baseExpr: rule.baseExpr, actualVal: `${e.col}=${e.val}`, validCodes: formatValidSpec(rule), refSummary });
+            errorRespSet.add(respId);
+          }
+        });
+      }
+
+      const mm = [];
+      const seen = new Set();
+      filled.forEach(e => { 
+        if (seen.has(e.val)) mm.push(`순위 중복(${e.col}=${e.val})`); 
+        seen.add(e.val); 
+      });
+
+      for (let i = 0; i < ords.length; i++) {
+        const currEmpty = !ords[i].val || ords[i].val === "0";
+        const laterFilled = ords.slice(i + 1).some(x => x.val && x.val !== "0");
+        if (currEmpty && laterFilled) mm.push(`${ords[i].col} 누락`);
+      }
+
+      // [핵심 변경점] 값(1, 2, 3)을 대조하는 것이 아니라, 두 그룹(순위 입력 배열 vs 보기 선택 배열)의 세트가 정확히 일치하는지만 대조
+      if (optionCols.length && rankOrderCols.length) {
+        if (optionRankCount !== filled.length) {
+          mm.push(`선택 개수 불일치 (보기컬럼 ${optionRankCount}개 선택 vs 순위컬럼 ${filled.length}개 랭크됨)`);
+        }
+        filled.forEach(e => {
+          // fst, snd 등에 적힌 코드가 a3_1~10 보기에도 체크되어 있는지 확인
+          if (!optMap[e.val]) {
+            mm.push(`세트 불일치 (${e.col}=${e.val} 입력됨, 그러나 보기컬럼 ${rule.parentVar}_${e.val} 비어있음)`);
+          }
+        });
+      }
+
+      if (mm.length > 0) {
+        validationErrors.push({ respId, ruleId: rule.ruleId, rawCol: colLabel, errorType: "RANK_MISMATCH", baseExpr: rule.baseExpr, actualVal: mm.join(" / "), validCodes: "보기 선택 세트와 순위 세트가 일치해야 함", refSummary });
+        errorRespSet.add(respId);
+      }
+    }
+
+    function formatColSummary(cols) {
+      if (!cols || !cols.length) return "미매칭";
+      if (cols.length <= 3) return cols.join(", ");
+      return `${cols[0]} ~ ${cols[cols.length - 1]} (${cols.length}개)`;
+    }
+
+    function formatValidSpec(rule) {
+      if (rule.numericRange) return `${rule.validCodes.join(", ")} (또는 ${rule.numericRange.min}~${rule.numericRange.max})`;
+      if (rule.validCodes.length > 6) return `${rule.validCodes[0]} ~ ${rule.validCodes[rule.validCodes.length - 1]} (총 ${rule.validCodes.length}개)`;
+      return rule.validCodes.join(", ") || "자유응답";
     }
 
     function renderErrorTable() {
