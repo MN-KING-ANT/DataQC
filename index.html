@@ -14,7 +14,6 @@
 </head>
 <body class="bg-slate-50 text-slate-800 min-h-screen">
 
-  <!-- Header -->
   <header class="bg-white border-b border-slate-200 sticky top-0 z-20">
     <div class="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
       <div>
@@ -23,7 +22,7 @@
           설문 Rawdata 로직 검증기
         </h1>
         <p class="text-xs text-slate-500 mt-0.5">
-          Grid SA(e41/e4a) · Grid MA(e41_1/e4a_1) · Ranking(a1_1~15 & fst/snd/trd) · Base 수식 자동 검증
+          Grid SA(e41/e4a) · Grid MA(e41_1/e4a_1) · Ranking · ‡기호 처리 및 a-p 범위 자동 파싱 적용
         </p>
       </div>
       <div class="flex items-center gap-3">
@@ -39,9 +38,7 @@
 
   <main class="max-w-7xl mx-auto px-6 py-6 space-y-6">
 
-    <!-- Step 1: File Upload Section -->
     <section class="grid grid-cols-1 md:grid-cols-2 gap-6">
-      <!-- Logic Guide Upload -->
       <div class="bg-white border-2 border-dashed border-slate-300 rounded-xl p-6 text-center hover:border-blue-500 transition cursor-pointer relative">
         <input type="file" id="logicFileInput" accept=".xlsx,.xls,.csv" class="absolute inset-0 opacity-0 cursor-pointer" />
         <div class="space-y-2">
@@ -52,7 +49,6 @@
         </div>
       </div>
 
-      <!-- Rawdata Upload -->
       <div class="bg-white border-2 border-dashed border-slate-300 rounded-xl p-6 text-center hover:border-blue-500 transition cursor-pointer relative">
         <input type="file" id="rawFileInput" accept=".xlsx,.xls,.csv" class="absolute inset-0 opacity-0 cursor-pointer" />
         <div class="space-y-2">
@@ -64,7 +60,6 @@
       </div>
     </section>
 
-    <!-- Run Button & ID Column Selector -->
     <section class="bg-white border border-slate-200 rounded-xl p-4 flex flex-wrap items-center justify-between gap-4">
       <div class="flex items-center gap-4 flex-wrap">
         <div class="flex items-center gap-2">
@@ -81,7 +76,6 @@
       </button>
     </section>
 
-    <!-- KPI Summary Cards -->
     <section id="kpiSection" class="hidden grid grid-cols-2 md:grid-cols-5 gap-4">
       <div class="bg-white p-4 rounded-xl border border-slate-200">
         <p class="text-xs text-slate-500">총 응답자 수</p>
@@ -105,7 +99,6 @@
       </div>
     </section>
 
-    <!-- Tabs -->
     <section id="resultSection" class="hidden bg-white border border-slate-200 rounded-xl overflow-hidden">
       <div class="border-b border-slate-200 px-6 flex items-center gap-6 bg-slate-50">
         <button id="tabBtnErrors" onclick="switchTab('errors')" class="py-3.5 text-sm font-bold border-b-2 border-blue-600 text-blue-600">
@@ -116,7 +109,6 @@
         </button>
       </div>
 
-      <!-- Tab 1: Errors Table -->
       <div id="tabErrorsContent" class="p-6 space-y-4">
         <div class="flex flex-wrap items-center justify-between gap-3">
           <div class="flex items-center gap-2 flex-wrap">
@@ -152,7 +144,6 @@
         </div>
       </div>
 
-      <!-- Tab 2: Parsed Logic Preview -->
       <div id="tabLogicContent" class="hidden p-6 space-y-4">
         <p class="text-xs text-slate-500">
           로직 가이드에서 추출된 문항별·그리드 행별 검증 규칙과 실제 Rawdata 컬럼 매칭 결과입니다.
@@ -179,11 +170,10 @@
   </main>
 
   <script>
-    // Global State
     let rawLogicRows = [];
     let rawDataRows = [];
     let rawDataHeaders = [];
-    let lowerHeaderMap = {}; // lowercase -> actual header name
+    let lowerHeaderMap = {};
     let parsedRules = [];
     let validationErrors = [];
     let projectName = "";
@@ -197,7 +187,6 @@
       { suffix: "5th", rank: 5 }
     ];
 
-    // File Upload Listeners
     document.getElementById('logicFileInput').addEventListener('change', (e) => handleFile(e.target.files[0], 'logic'));
     document.getElementById('rawFileInput').addEventListener('change', (e) => handleFile(e.target.files[0], 'raw'));
 
@@ -234,7 +223,7 @@
     function populateIdColumnSelector(headers) {
       const select = document.getElementById('idColSelect');
       select.innerHTML = '<option value="__ROW__">엑셀 행 번호 (기본)</option>';
-      const idCandidates = ['id', 'resp_id', 'respid', 'record', 'uuid', 'pid', 'uid', 'panel_id'];
+      const idCandidates = ['id', 'resp_id', 'respid', 'record', 'uuid', 'pid', 'uid', 'panel_id', 'iiRepSerial'];
       let matchedDefault = null;
 
       headers.forEach(h => {
@@ -249,12 +238,6 @@
       if (matchedDefault) select.value = matchedDefault;
     }
 
-    /**
-     * 1. LOGIC GUIDE PARSER
-     * - Grid SA: e41, e42 or c4a, c4b (based on Col A under Rows)
-     * - Grid MA: e41_1~e41_10 or e4a_1~e4a_10 (based on Col A under Rows + Col A under Columns)
-     * - Ranking: a1_1~a1_15 + a1_fst, a1_snd, a1_trd
-     */
     function parseLogicRows(rows) {
       parsedRules = [];
       projectName = "";
@@ -284,17 +267,12 @@
 
         if (!colA && !colB && !colC) continue;
 
-        const isBaseText = /^base\s*:/i.test(colC);
-        const isQuestionHeader = colA !== "" && !/^\d+$/.test(colA) && colC !== "" && !isBaseText;
+        const isQuestionType = /single|multi|grid|rank|순위|open|numeric|slider/i.test(colC);
+        const isQuestionHeader = colA !== "" && colC !== "" && isQuestionType;
 
         if (isQuestionHeader) {
           if (currentBlock) blocks.push(currentBlock);
-          currentBlock = {
-            varName: colA,
-            questionText: colB,
-            qTypeRaw: colC,
-            subRows: []
-          };
+          currentBlock = { varName: colA, questionText: colB, qTypeRaw: colC, subRows: [] };
         } else if (currentBlock) {
           currentBlock.subRows.push({ colA, colB, colC });
         }
@@ -328,7 +306,7 @@
 
             if (section === "ROWS" && r.colA !== "") {
               gridItems.push({
-                rowCode: r.colA, // '1', '2' or 'a', 'b'
+                rowCode: r.colA,
                 rowLabel: r.colB,
                 rowBase: r.colC ? cleanBaseString(r.colC) : "All"
               });
@@ -337,8 +315,6 @@
             }
           });
 
-          // Create an expanded rule per Grid Row:
-          // Rule ID uses {varName}{rowCode} directly (e.g., e41, e4a, c4a)
           gridItems.forEach((item, idx) => {
             const combinedBase = combineBases(gridBase, item.rowBase);
             parsedRules.push({
@@ -407,35 +383,18 @@
       return b1 || b2 || "All";
     }
 
-    /**
-     * 2. RAWDATA COLUMN MATCHER
-     * Matches columns according to the exact naming conventions:
-     * - Grid SA: e41, e42 or e4a, e4b (fallback: e4_1, e4_a)
-     * - Grid MA: e41_1~e41_10 or e4a_1~e4a_10 (fallback: e4_1_1, e4_a_1)
-     * - Ranking: a1_1~a1_15 + a1_fst, a1_snd, a1_trd
-     * - Multi: c3_1~c3_16
-     */
     function bindColumnsToRule(rule) {
       const v = rule.parentVar.toLowerCase().trim();
 
-      // Auto-detect RANKING if Rawdata has {v}_fst or {v}_snd
       if (rule.qType !== "GRID_SINGLE" && rule.qType !== "GRID_MULTI") {
-        if (lowerHeaderMap[`${v}_fst`] || lowerHeaderMap[`${v}_snd`]) {
-          rule.qType = "RANKING";
-        }
+        if (lowerHeaderMap[`${v}_fst`] || lowerHeaderMap[`${v}_snd`]) rule.qType = "RANKING";
       }
 
       if (rule.qType === "GRID_SINGLE") {
         const rc = rule.rowCode.toLowerCase().trim();
-        const candidates = [
-          `${v}${rc}`,      // Primary: e41, e4a, c4a
-          `${v}_${rc}`      // Fallback: e4_1, e4_a, c4_a
-        ];
+        const candidates = [`${v}${rc}`, `${v}_${rc}`];
         for (const cand of candidates) {
-          if (lowerHeaderMap[cand]) {
-            rule.matchedCols = [lowerHeaderMap[cand]];
-            return;
-          }
+          if (lowerHeaderMap[cand]) { rule.matchedCols = [lowerHeaderMap[cand]]; return; }
         }
         rule.matchedCols = [];
         return;
@@ -443,7 +402,7 @@
 
       if (rule.qType === "GRID_MULTI") {
         const rc = rule.rowCode.toLowerCase().trim();
-        const prefixes = [`${v}${rc}`, `${v}_${rc}`]; // e41 or e4a
+        const prefixes = [`${v}${rc}`, `${v}_${rc}`];
         let foundCols = [];
 
         for (const prefix of prefixes) {
@@ -453,31 +412,22 @@
               const colKey = `${prefix}_${String(code).toLowerCase().trim()}`;
               if (lowerHeaderMap[colKey]) temp.push(lowerHeaderMap[colKey]);
             });
-            if (temp.length > 0) {
-              foundCols = temp;
-              break;
-            }
+            if (temp.length > 0) { foundCols = temp; break; }
           }
-          // Fallback regex search: prefix_1, prefix_2...
           const regex = new RegExp(`^${escapeRegex(prefix)}_(\\d+)$`, 'i');
           const regexCols = rawDataHeaders.filter(h => regex.test(h.trim()));
-          if (regexCols.length > 0) {
-            foundCols = regexCols;
-            break;
-          }
+          if (regexCols.length > 0) { foundCols = regexCols; break; }
         }
         rule.matchedCols = foundCols;
         return;
       }
 
       if (rule.qType === "RANKING") {
-        const optionCols = []; // e.g., a1_1 ~ a1_15
+        const optionCols = [];
         if (rule.validCodes.length > 0) {
           rule.validCodes.forEach(code => {
             const key = `${v}_${String(code).toLowerCase().trim()}`;
-            if (lowerHeaderMap[key]) {
-              optionCols.push({ code: String(code), col: lowerHeaderMap[key] });
-            }
+            if (lowerHeaderMap[key]) optionCols.push({ code: String(code), col: lowerHeaderMap[key] });
           });
         } else {
           const regex = new RegExp(`^${escapeRegex(v)}_(\\d+)$`, 'i');
@@ -487,19 +437,14 @@
           });
         }
 
-        const rankOrderCols = []; // e.g., a1_fst, a1_snd, a1_trd
+        const rankOrderCols = [];
         RANK_SUFFIXES.forEach(rs => {
           const key = `${v}_${rs.suffix}`;
-          if (lowerHeaderMap[key]) {
-            rankOrderCols.push({ rank: rs.rank, suffix: rs.suffix, col: lowerHeaderMap[key] });
-          }
+          if (lowerHeaderMap[key]) rankOrderCols.push({ rank: rs.rank, suffix: rs.suffix, col: lowerHeaderMap[key] });
         });
 
         rule.rankingMeta = { optionCols, rankOrderCols };
-        rule.matchedCols = [
-          ...optionCols.map(o => o.col),
-          ...rankOrderCols.map(r => r.col)
-        ];
+        rule.matchedCols = [...optionCols.map(o => o.col), ...rankOrderCols.map(r => r.col)];
         return;
       }
 
@@ -513,82 +458,83 @@
         }
         if (subCols.length === 0) {
           const regex = new RegExp(`^${escapeRegex(v)}_(\\d+)$`, 'i');
-          rawDataHeaders.forEach(h => {
-            if (regex.test(h.trim())) subCols.push(h);
-          });
+          rawDataHeaders.forEach(h => { if (regex.test(h.trim())) subCols.push(h); });
         }
-        if (subCols.length === 0 && lowerHeaderMap[v]) {
-          subCols.push(lowerHeaderMap[v]);
-        }
+        if (subCols.length === 0 && lowerHeaderMap[v]) subCols.push(lowerHeaderMap[v]);
         rule.matchedCols = subCols;
         return;
       }
 
-      // SINGLE or OPEN
       rule.matchedCols = lowerHeaderMap[v] ? [lowerHeaderMap[v]] : [];
     }
 
-    /**
-     * Extracts selected option codes for any variable referenced in a Base condition
-     * (e.g., s1=1, c1=1-2, c2≠17, c3=1, e4a=1, a1=3, a1_fst=1)
-     */
     function getRespondentValues(row, varName) {
       const v = varName.toLowerCase().trim();
 
       if (!variableValueCache[v]) {
-        const exactCol = lowerHeaderMap[v] || null;
-        const rankOrderCols = RANK_SUFFIXES
-          .map(rs => lowerHeaderMap[`${v}_${rs.suffix}`])
-          .filter(Boolean);
+        let varsToCheck = [v];
+        // Handle range patterns like c16a-p or e52b_a-p
+        const rangeMatch = v.match(/^([a-z0-9_]+)_?([a-z])-([a-z])$/i);
+        if (rangeMatch) {
+          varsToCheck = [];
+          const base = rangeMatch[1];
+          const startChar = rangeMatch[2].charCodeAt(0);
+          const endChar = rangeMatch[3].charCodeAt(0);
+          for (let i = startChar; i <= endChar; i++) {
+            const char = String.fromCharCode(i);
+            varsToCheck.push(`${base}${char}`);
+            varsToCheck.push(`${base}_${char}`);
+          }
+        }
+
+        const exactCols = [];
+        const rankOrderCols = [];
         const subOptionCols = [];
-        const regex = new RegExp(`^${escapeRegex(v)}_(\\d+)$`, 'i');
-        rawDataHeaders.forEach(h => {
-          const m = h.trim().match(regex);
-          if (m) subOptionCols.push({ code: m[1], col: h });
+
+        varsToCheck.forEach(vc => {
+          if (lowerHeaderMap[vc]) exactCols.push(lowerHeaderMap[vc]);
+          
+          RANK_SUFFIXES.forEach(rs => {
+            if (lowerHeaderMap[`${vc}_${rs.suffix}`]) {
+              rankOrderCols.push({ rank: rs.rank, suffix: rs.suffix, col: lowerHeaderMap[`${vc}_${rs.suffix}`] });
+            }
+          });
+
+          const regex = new RegExp(`^${escapeRegex(vc)}_(\\d+)$`, 'i');
+          rawDataHeaders.forEach(h => {
+            const m = h.trim().match(regex);
+            if (m) subOptionCols.push({ code: m[1], col: h });
+          });
         });
 
-        variableValueCache[v] = { exactCol, rankOrderCols, subOptionCols };
+        variableValueCache[v] = { exactCols, rankOrderCols, subOptionCols };
       }
 
       const info = variableValueCache[v];
       const selected = new Set();
 
-      // 1) Exact single column (e.g., s1, c4a, e41, a1_fst)
-      if (info.exactCol && info.subOptionCols.length === 0) {
-        const rawVal = String(row[info.exactCol] ?? "").trim();
+      info.exactCols.forEach(col => {
+        const rawVal = String(row[col] ?? "").trim();
         if (rawVal !== "") {
           rawVal.split(/\s*,\s*/).forEach(part => {
             if (part !== "") selected.add(part);
           });
         }
-        return Array.from(selected);
-      }
+      });
 
-      // 2) If it has _fst, _snd, _trd (Ranking variable referenced as a whole, e.g. a1=5)
-      if (info.rankOrderCols.length > 0) {
-        info.rankOrderCols.forEach(col => {
-          const val = String(row[col] ?? "").trim();
-          if (val !== "" && val !== "0") selected.add(val);
-        });
-      }
+      info.rankOrderCols.forEach(e => {
+        const val = String(row[e.col] ?? "").trim();
+        if (val !== "" && val !== "0") selected.add(val);
+      });
 
-      // 3) Sub-option columns (e.g., c3_1 ~ c3_16, e4a_1 ~ e4a_10, or a1_1 ~ a1_15)
-      if (info.subOptionCols.length > 0) {
-        info.subOptionCols.forEach(({ code, col }) => {
-          const val = String(row[col] ?? "").trim();
-          if (val !== "" && val !== "0") {
-            // In dummy/ranking sub-columns (c3_1..16 or a1_1..15), a non-zero value means `code` was selected
-            selected.add(code);
-          }
-        });
-      }
+      info.subOptionCols.forEach(({ code, col }) => {
+        const val = String(row[col] ?? "").trim();
+        if (val !== "" && val !== "0") selected.add(code);
+      });
 
       return Array.from(selected);
     }
 
-    /**
-     * 3. BASE CONDITION EVALUATOR
-     */
     function evaluateBaseCondition(baseExpr, row) {
       if (!baseExpr || baseExpr.toLowerCase() === "all") {
         return { passed: true, refSummary: "Base: All" };
@@ -596,12 +542,13 @@
 
       const refVars = new Set();
 
+      // Support ‡, ≠, !=, <=, >=, etc. And dash (-) in LHS variables (like c16a-p)
       const jsBoolExpr = baseExpr
         .replace(/\bAND\b/gi, "&&")
         .replace(/\bOR\b/gi, "||")
         .replace(/&+/g, "&&")
         .replace(/\|+/g, "||")
-        .replace(/([a-zA-Z0-9_]+)\s*(≠|!=|<>|>=|<=|>|<|=)\s*([0-9,\-\s]+)/g, (match, varName, op, rhs) => {
+        .replace(/([a-zA-Z0-9_.\-]+)\s*(‡|≠|!=|<>|>=|<=|>|<|=)\s*([0-9,\-\sA-Za-z]+)/g, (match, varName, op, rhs) => {
           refVars.add(varName);
           const actualVals = getRespondentValues(row, varName);
           const targetCodes = parseRhsCodes(rhs);
@@ -610,7 +557,7 @@
             const hit = actualVals.some(v => targetCodes.includes(String(v)));
             return hit ? "true" : "false";
           }
-          if (op === "≠" || op === "!=" || op === "<>") {
+          if (op === "≠" || op === "!=" || op === "<>" || op === "‡") {
             const hit = actualVals.some(v => targetCodes.includes(String(v)));
             return (!hit) ? "true" : "false";
           }
@@ -625,12 +572,8 @@
         });
 
       let passed = true;
-      try {
-        passed = Boolean(Function(`"use strict"; return (${jsBoolExpr});`)());
-      } catch (e) {
-        console.warn("Base evaluation error:", baseExpr, jsBoolExpr, e);
-        passed = true;
-      }
+      try { passed = Boolean(Function(`"use strict"; return (${jsBoolExpr});`)()); } 
+      catch (e) { console.warn("Base evaluation error:", baseExpr, jsBoolExpr, e); passed = true; }
 
       const refParts = [];
       refVars.forEach(rv => {
@@ -657,9 +600,6 @@
       return result;
     }
 
-    /**
-     * 4. MAIN VALIDATION ENGINE
-     */
     function runValidation() {
       validationErrors = [];
       variableValueCache = {};
@@ -669,23 +609,16 @@
 
       const errorRespSet = new Set();
 
-      // 1) Check unmapped columns
       parsedRules.forEach(rule => {
         if (!rule.matchedCols || rule.matchedCols.length === 0) {
           validationErrors.push({
-            respId: "전체(구조오류)",
-            ruleId: rule.ruleId,
-            rawCol: "미매칭",
-            errorType: "COL_NOT_FOUND",
-            baseExpr: rule.baseExpr,
-            actualVal: "-",
-            validCodes: formatValidSpec(rule),
-            refSummary: "Rawdata에서 해당 변수 컬럼을 찾을 수 없음"
+            respId: "전체(구조오류)", ruleId: rule.ruleId, rawCol: "미매칭", errorType: "COL_NOT_FOUND",
+            baseExpr: rule.baseExpr, actualVal: "-", validCodes: formatValidSpec(rule),
+            refSummary: "Rawdata에서 해당 변수 컬럼을 찾을 수 없음 (오타 확인)"
           });
         }
       });
 
-      // 2) Validate each respondent
       rawDataRows.forEach((row, rIdx) => {
         const respId = idCol === "__ROW__" ? `Row #${rIdx + 2}` : String(row[idCol] ?? `Row #${rIdx + 2}`);
 
@@ -694,63 +627,29 @@
 
           const { passed: isBaseMet, refSummary } = evaluateBaseCondition(rule.baseExpr, row);
 
-          // CASE A: SINGLE / GRID_SINGLE / OPEN (e.g., s1, s4_us, c4a, e41)
           if (rule.qType === "SINGLE" || rule.qType === "GRID_SINGLE" || rule.qType === "OPEN") {
             const colName = rule.matchedCols[0];
             const rawVal = String(row[colName] ?? "").trim();
 
             if (isBaseMet) {
               if (rawVal === "") {
-                validationErrors.push({
-                  respId,
-                  ruleId: rule.ruleId,
-                  rawCol: colName,
-                  errorType: "MISSING",
-                  baseExpr: rule.baseExpr,
-                  actualVal: "(빈값)",
-                  validCodes: formatValidSpec(rule),
-                  refSummary
-                });
+                validationErrors.push({ respId, ruleId: rule.ruleId, rawCol: colName, errorType: "MISSING", baseExpr: rule.baseExpr, actualVal: "(빈값)", validCodes: formatValidSpec(rule), refSummary });
                 errorRespSet.add(respId);
               } else if (rule.qType !== "OPEN" && rule.validCodes.length > 0) {
                 const isCodeValid = rule.validCodes.includes(rawVal);
-                const isRangeValid = rule.numericRange &&
-                  !isNaN(Number(rawVal)) &&
-                  Number(rawVal) >= rule.numericRange.min &&
-                  Number(rawVal) <= rule.numericRange.max;
-
+                const isRangeValid = rule.numericRange && !isNaN(Number(rawVal)) && Number(rawVal) >= rule.numericRange.min && Number(rawVal) <= rule.numericRange.max;
                 if (!isCodeValid && !isRangeValid) {
-                  validationErrors.push({
-                    respId,
-                    ruleId: rule.ruleId,
-                    rawCol: colName,
-                    errorType: "OUT_OF_RANGE",
-                    baseExpr: rule.baseExpr,
-                    actualVal: rawVal,
-                    validCodes: formatValidSpec(rule),
-                    refSummary
-                  });
+                  validationErrors.push({ respId, ruleId: rule.ruleId, rawCol: colName, errorType: "OUT_OF_RANGE", baseExpr: rule.baseExpr, actualVal: rawVal, validCodes: formatValidSpec(rule), refSummary });
                   errorRespSet.add(respId);
                 }
               }
             } else {
               if (rawVal !== "") {
-                validationErrors.push({
-                  respId,
-                  ruleId: rule.ruleId,
-                  rawCol: colName,
-                  errorType: "SKIP_ERROR",
-                  baseExpr: rule.baseExpr,
-                  actualVal: rawVal,
-                  validCodes: "빈값이어야 함 (Skip)",
-                  refSummary
-                });
+                validationErrors.push({ respId, ruleId: rule.ruleId, rawCol: colName, errorType: "SKIP_ERROR", baseExpr: rule.baseExpr, actualVal: rawVal, validCodes: "빈값이어야 함 (Skip)", refSummary });
                 errorRespSet.add(respId);
               }
             }
           }
-
-          // CASE B: MULTI / GRID_MULTI (e.g., c3_1~c3_16, e41_1~e41_10, e4a_1~e4a_10)
           else if (rule.qType === "MULTI" || rule.qType === "GRID_MULTI") {
             const selectedCodes = [];
             const invalidEntries = [];
@@ -762,65 +661,30 @@
               const suffixMatch = col.trim().match(/_(\d+)$/);
               const suffixCode = suffixMatch ? suffixMatch[1] : val;
 
-              // In dummy columns (e4a_1~10), valid non-empty value is '1' or the suffix code itself
               if (suffixMatch) {
-                if (val === "1" || val === suffixCode) {
-                  selectedCodes.push(suffixCode);
-                } else {
-                  invalidEntries.push(`${col}=${val}`);
-                }
-              } else {
-                selectedCodes.push(val);
-              }
+                if (val === "1" || val === suffixCode) selectedCodes.push(suffixCode);
+                else invalidEntries.push(`${col}=${val}`);
+              } else { selectedCodes.push(val); }
             });
 
             const colRangeLabel = formatColSummary(rule.matchedCols);
 
             if (isBaseMet) {
               if (selectedCodes.length === 0 && invalidEntries.length === 0) {
-                validationErrors.push({
-                  respId,
-                  ruleId: rule.ruleId,
-                  rawCol: colRangeLabel,
-                  errorType: "MISSING",
-                  baseExpr: rule.baseExpr,
-                  actualVal: "(선택 없음)",
-                  validCodes: formatValidSpec(rule),
-                  refSummary
-                });
+                validationErrors.push({ respId, ruleId: rule.ruleId, rawCol: colRangeLabel, errorType: "MISSING", baseExpr: rule.baseExpr, actualVal: "(선택 없음)", validCodes: formatValidSpec(rule), refSummary });
                 errorRespSet.add(respId);
               }
               if (invalidEntries.length > 0) {
-                validationErrors.push({
-                  respId,
-                  ruleId: rule.ruleId,
-                  rawCol: colRangeLabel,
-                  errorType: "OUT_OF_RANGE",
-                  baseExpr: rule.baseExpr,
-                  actualVal: invalidEntries.join(", "),
-                  validCodes: "0, 1 (또는 해당 보기 코드)",
-                  refSummary
-                });
+                validationErrors.push({ respId, ruleId: rule.ruleId, rawCol: colRangeLabel, errorType: "OUT_OF_RANGE", baseExpr: rule.baseExpr, actualVal: invalidEntries.join(", "), validCodes: "0, 1 (또는 해당 보기 코드)", refSummary });
                 errorRespSet.add(respId);
               }
             } else {
               if (selectedCodes.length > 0 || invalidEntries.length > 0) {
-                validationErrors.push({
-                  respId,
-                  ruleId: rule.ruleId,
-                  rawCol: colRangeLabel,
-                  errorType: "SKIP_ERROR",
-                  baseExpr: rule.baseExpr,
-                  actualVal: selectedCodes.length > 0 ? `선택됨: ${selectedCodes.join(",")}` : invalidEntries.join(","),
-                  validCodes: "모두 빈값이어야 함 (Skip)",
-                  refSummary
-                });
+                validationErrors.push({ respId, ruleId: rule.ruleId, rawCol: colRangeLabel, errorType: "SKIP_ERROR", baseExpr: rule.baseExpr, actualVal: selectedCodes.length > 0 ? `선택됨: ${selectedCodes.join(",")}` : invalidEntries.join(","), validCodes: "모두 빈값이어야 함 (Skip)", refSummary });
                 errorRespSet.add(respId);
               }
             }
           }
-
-          // CASE C: RANKING (a1_1~a1_15 + a1_fst, a1_snd, a1_trd)
           else if (rule.qType === "RANKING") {
             validateRankingRule(rule, row, respId, isBaseMet, refSummary, errorRespSet);
           }
@@ -830,25 +694,17 @@
       updateDashboard(errorRespSet.size);
     }
 
-    /**
-     * Specialized validator for Ranking questions:
-     * Checks a1_1~a1_15 AND a1_fst, a1_snd, a1_trd
-     */
     function validateRankingRule(rule, row, respId, isBaseMet, refSummary, errorRespSet) {
       const { optionCols, rankOrderCols } = rule.rankingMeta;
       const colLabel = formatColSummary(rule.matchedCols);
 
-      // 1) Read values from a1_1 ~ a1_15
-      const optionRankMap = {}; // code -> rank string (e.g., { "5": "1", "12": "2" })
+      const optionRankMap = {};
       optionCols.forEach(({ code, col }) => {
         const val = String(row[col] ?? "").trim();
-        if (val !== "" && val !== "0") {
-          optionRankMap[code] = val;
-        }
+        if (val !== "" && val !== "0") optionRankMap[code] = val;
       });
 
-      // 2) Read values from a1_fst, a1_snd, a1_trd
-      const orderEntries = []; // [{ rank: 1, suffix: 'fst', col: 'a1_fst', val: '5' }, ...]
+      const orderEntries = [];
       rankOrderCols.forEach(({ rank, suffix, col }) => {
         const val = String(row[col] ?? "").trim();
         orderEntries.push({ rank, suffix, col, val });
@@ -857,109 +713,53 @@
       const filledOrderEntries = orderEntries.filter(e => e.val !== "" && e.val !== "0");
       const optionRankCount = Object.keys(optionRankMap).length;
 
-      // If Base is NOT met -> everything must be empty
       if (!isBaseMet) {
         if (optionRankCount > 0 || filledOrderEntries.length > 0) {
-          const actualSummary = [
-            ...filledOrderEntries.map(e => `${e.col}=${e.val}`),
-            ...Object.entries(optionRankMap).map(([c, r]) => `${rule.parentVar}_${c}=${r}`)
-          ].join(", ");
-          validationErrors.push({
-            respId,
-            ruleId: rule.ruleId,
-            rawCol: colLabel,
-            errorType: "SKIP_ERROR",
-            baseExpr: rule.baseExpr,
-            actualVal: actualSummary,
-            validCodes: "빈값이어야 함 (Skip)",
-            refSummary
-          });
+          const actualSummary = [...filledOrderEntries.map(e => `${e.col}=${e.val}`), ...Object.entries(optionRankMap).map(([c, r]) => `${rule.parentVar}_${c}=${r}`)].join(", ");
+          validationErrors.push({ respId, ruleId: rule.ruleId, rawCol: colLabel, errorType: "SKIP_ERROR", baseExpr: rule.baseExpr, actualVal: actualSummary, validCodes: "빈값이어야 함 (Skip)", refSummary });
           errorRespSet.add(respId);
         }
         return;
       }
 
-      // If Base IS met:
-      // 1. Check Missing
       if (optionRankCount === 0 && filledOrderEntries.length === 0) {
-        validationErrors.push({
-          respId,
-          ruleId: rule.ruleId,
-          rawCol: colLabel,
-          errorType: "MISSING",
-          baseExpr: rule.baseExpr,
-          actualVal: "(순위 응답 없음)",
-          validCodes: formatValidSpec(rule),
-          refSummary
-        });
+        validationErrors.push({ respId, ruleId: rule.ruleId, rawCol: colLabel, errorType: "MISSING", baseExpr: rule.baseExpr, actualVal: "(순위 응답 없음)", validCodes: formatValidSpec(rule), refSummary });
         errorRespSet.add(respId);
         return;
       }
 
-      // 2. Check if any filled value in _fst, _snd, _trd is out of valid option range
       if (rule.validCodes.length > 0) {
         filledOrderEntries.forEach(e => {
           if (!rule.validCodes.includes(e.val)) {
-            validationErrors.push({
-              respId,
-              ruleId: rule.ruleId,
-              rawCol: e.col,
-              errorType: "OUT_OF_RANGE",
-              baseExpr: rule.baseExpr,
-              actualVal: `${e.col}=${e.val}`,
-              validCodes: formatValidSpec(rule),
-              refSummary
-            });
+            validationErrors.push({ respId, ruleId: rule.ruleId, rawCol: e.col, errorType: "OUT_OF_RANGE", baseExpr: rule.baseExpr, actualVal: `${e.col}=${e.val}`, validCodes: formatValidSpec(rule), refSummary });
             errorRespSet.add(respId);
           }
         });
       }
 
-      // 3. Cross-check duplicates & consistency between (a1_fst, a1_snd, a1_trd) and (a1_1 ~ a1_15)
       const mismatchReasons = [];
-
-      // Check duplicate codes in _fst, _snd, _trd
       const seenCodes = new Set();
       filledOrderEntries.forEach(e => {
-        if (seenCodes.has(e.val)) {
-          mismatchReasons.push(`중복 순위 코드(${e.col}=${e.val})`);
-        }
+        if (seenCodes.has(e.val)) mismatchReasons.push(`중복 순위 코드(${e.col}=${e.val})`);
         seenCodes.add(e.val);
       });
 
-      // Check sequential order (e.g. _trd is filled but _snd is empty)
       for (let i = 0; i < orderEntries.length; i++) {
         const currEmpty = orderEntries[i].val === "" || orderEntries[i].val === "0";
         const laterFilled = orderEntries.slice(i + 1).some(x => x.val !== "" && x.val !== "0");
-        if (currEmpty && laterFilled) {
-          mismatchReasons.push(`${orderEntries[i].col} 누락`);
-        }
+        if (currEmpty && laterFilled) mismatchReasons.push(`${orderEntries[i].col} 누락`);
       }
 
-      // Cross-verify optionCols (a1_1~15) vs rankOrderCols (a1_fst~trd) if both exist
       if (optionCols.length > 0 && rankOrderCols.length > 0) {
-        if (optionRankCount !== filledOrderEntries.length) {
-          mismatchReasons.push(`개수 불일치(보기컬럼 ${optionRankCount}개 vs 순위컬럼 ${filledOrderEntries.length}개)`);
-        }
+        if (optionRankCount !== filledOrderEntries.length) mismatchReasons.push(`개수 불일치(보기컬럼 ${optionRankCount}개 vs 순위컬럼 ${filledOrderEntries.length}개)`);
         filledOrderEntries.forEach(e => {
           const recordedRankInOptionCol = optionRankMap[e.val];
-          if (String(recordedRankInOptionCol) !== String(e.rank)) {
-            mismatchReasons.push(`${e.col}=${e.val}이나 ${rule.parentVar}_${e.val}=${recordedRankInOptionCol || '빈값'}`);
-          }
+          if (String(recordedRankInOptionCol) !== String(e.rank)) mismatchReasons.push(`${e.col}=${e.val}이나 ${rule.parentVar}_${e.val}=${recordedRankInOptionCol || '빈값'}`);
         });
       }
 
       if (mismatchReasons.length > 0) {
-        validationErrors.push({
-          respId,
-          ruleId: rule.ruleId,
-          rawCol: colLabel,
-          errorType: "RANK_MISMATCH",
-          baseExpr: rule.baseExpr,
-          actualVal: mismatchReasons.join(" / "),
-          validCodes: `${rule.parentVar}_1~N 순위값과 fst/snd/trd 일치 필수`,
-          refSummary
-        });
+        validationErrors.push({ respId, ruleId: rule.ruleId, rawCol: colLabel, errorType: "RANK_MISMATCH", baseExpr: rule.baseExpr, actualVal: mismatchReasons.join(" / "), validCodes: `${rule.parentVar}_1~N 순위값과 fst/snd/trd 일치 필수`, refSummary });
         errorRespSet.add(respId);
       }
     }
@@ -971,12 +771,8 @@
     }
 
     function formatValidSpec(rule) {
-      if (rule.numericRange) {
-        return `${rule.validCodes.join(", ")} (또는 ${rule.numericRange.min}~${rule.numericRange.max})`;
-      }
-      if (rule.validCodes.length > 6) {
-        return `${rule.validCodes[0]} ~ ${rule.validCodes[rule.validCodes.length - 1]} (총 ${rule.validCodes.length}개)`;
-      }
+      if (rule.numericRange) return `${rule.validCodes.join(", ")} (또는 ${rule.numericRange.min}~${rule.numericRange.max})`;
+      if (rule.validCodes.length > 6) return `${rule.validCodes[0]} ~ ${rule.validCodes[rule.validCodes.length - 1]} (총 ${rule.validCodes.length}개)`;
       return rule.validCodes.join(", ") || "자유응답";
     }
 
@@ -1008,12 +804,7 @@
 
       const filtered = validationErrors.filter(e => {
         if (typeFilter !== "ALL" && e.errorType !== typeFilter) return false;
-        if (searchStr &&
-            !e.ruleId.toLowerCase().includes(searchStr) &&
-            !e.respId.toLowerCase().includes(searchStr) &&
-            !e.rawCol.toLowerCase().includes(searchStr)) {
-          return false;
-        }
+        if (searchStr && !e.ruleId.toLowerCase().includes(searchStr) && !e.respId.toLowerCase().includes(searchStr) && !e.rawCol.toLowerCase().includes(searchStr)) return false;
         return true;
       });
 
@@ -1022,31 +813,15 @@
         return;
       }
 
-      const badgeStyles = {
-        MISSING: "bg-red-100 text-red-700",
-        SKIP_ERROR: "bg-amber-100 text-amber-800",
-        OUT_OF_RANGE: "bg-purple-100 text-purple-700",
-        RANK_MISMATCH: "bg-pink-100 text-pink-700",
-        COL_NOT_FOUND: "bg-slate-200 text-slate-700"
-      };
-      const badgeLabels = {
-        MISSING: "응답 누락 (Missing)",
-        SKIP_ERROR: "스킵 위반 (Over-punch)",
-        OUT_OF_RANGE: "범위 위반 (Out of Range)",
-        RANK_MISMATCH: "순위 불일치 (Rank Error)",
-        COL_NOT_FOUND: "컬럼 미매칭"
-      };
+      const badgeStyles = { MISSING: "bg-red-100 text-red-700", SKIP_ERROR: "bg-amber-100 text-amber-800", OUT_OF_RANGE: "bg-purple-100 text-purple-700", RANK_MISMATCH: "bg-pink-100 text-pink-700", COL_NOT_FOUND: "bg-slate-200 text-slate-700" };
+      const badgeLabels = { MISSING: "응답 누락 (Missing)", SKIP_ERROR: "스킵 위반 (Over-punch)", OUT_OF_RANGE: "범위 위반 (Out of Range)", RANK_MISMATCH: "순위 불일치 (Rank Error)", COL_NOT_FOUND: "컬럼 미매칭" };
 
       tbody.innerHTML = filtered.slice(0, 1000).map(e => `
         <tr class="hover:bg-slate-50">
           <td class="py-2 px-3 font-semibold text-slate-800">${escapeHtml(e.respId)}</td>
           <td class="py-2 px-3 font-mono font-bold text-blue-600">${escapeHtml(e.ruleId)}</td>
           <td class="py-2 px-3 font-mono text-slate-600">${escapeHtml(e.rawCol)}</td>
-          <td class="py-2 px-3">
-            <span class="px-2 py-0.5 rounded text-[11px] font-semibold ${badgeStyles[e.errorType] || ''}">
-              ${badgeLabels[e.errorType] || e.errorType}
-            </span>
-          </td>
+          <td class="py-2 px-3"><span class="px-2 py-0.5 rounded text-[11px] font-semibold ${badgeStyles[e.errorType] || ''}">${badgeLabels[e.errorType] || e.errorType}</span></td>
           <td class="py-2 px-3 font-mono text-slate-700">${escapeHtml(e.baseExpr)}</td>
           <td class="py-2 px-3 font-mono font-bold text-red-600">${escapeHtml(e.actualVal)}</td>
           <td class="py-2 px-3 text-slate-600">${escapeHtml(e.validCodes)}</td>
@@ -1063,14 +838,10 @@
           <tr class="hover:bg-slate-50">
             <td class="py-2 px-3 font-mono font-bold text-blue-600">${escapeHtml(r.ruleId)}</td>
             <td class="py-2 px-3 font-mono text-slate-600">${escapeHtml(r.parentVar)}</td>
-            <td class="py-2 px-3">
-              <span class="px-2 py-0.5 rounded bg-slate-100 text-slate-700 font-mono text-[11px] font-semibold">${escapeHtml(r.qType)}</span>
-            </td>
+            <td class="py-2 px-3"><span class="px-2 py-0.5 rounded bg-slate-100 text-slate-700 font-mono text-[11px] font-semibold">${escapeHtml(r.qType)}</span></td>
             <td class="py-2 px-3 font-mono text-emerald-700 font-medium">${escapeHtml(r.baseExpr)}</td>
             <td class="py-2 px-3 text-slate-600">${escapeHtml(formatValidSpec(r))}</td>
-            <td class="py-2 px-3 font-mono ${matched ? 'text-slate-800' : 'text-red-600 font-bold'}">
-              ${matched ? escapeHtml(formatColSummary(r.matchedCols)) : '⚠️ 미매칭'}
-            </td>
+            <td class="py-2 px-3 font-mono ${matched ? 'text-slate-800' : 'text-red-600 font-bold'}">${matched ? escapeHtml(formatColSummary(r.matchedCols)) : '⚠️ 미매칭'}</td>
             <td class="py-2 px-3 text-slate-500 truncate max-w-xs" title="${escapeHtml(r.label)}">${escapeHtml(r.label)}</td>
           </tr>
         `;
@@ -1081,60 +852,21 @@
       const isErrors = tab === 'errors';
       document.getElementById('tabErrorsContent').classList.toggle('hidden', !isErrors);
       document.getElementById('tabLogicContent').classList.toggle('hidden', isErrors);
-
-      document.getElementById('tabBtnErrors').className = isErrors
-        ? "py-3.5 text-sm font-bold border-b-2 border-blue-600 text-blue-600"
-        : "py-3.5 text-sm font-medium border-b-2 border-transparent text-slate-500 hover:text-slate-800";
-      document.getElementById('tabBtnLogic').className = !isErrors
-        ? "py-3.5 text-sm font-bold border-b-2 border-blue-600 text-blue-600"
-        : "py-3.5 text-sm font-medium border-b-2 border-transparent text-slate-500 hover:text-slate-800";
+      document.getElementById('tabBtnErrors').className = isErrors ? "py-3.5 text-sm font-bold border-b-2 border-blue-600 text-blue-600" : "py-3.5 text-sm font-medium border-b-2 border-transparent text-slate-500 hover:text-slate-800";
+      document.getElementById('tabBtnLogic').className = !isErrors ? "py-3.5 text-sm font-bold border-b-2 border-blue-600 text-blue-600" : "py-3.5 text-sm font-medium border-b-2 border-transparent text-slate-500 hover:text-slate-800";
     }
 
     function exportErrorReport() {
       const wb = XLSX.utils.book_new();
-
-      const errorSheetRows = validationErrors.map(e => ({
-        "응답자 ID": e.respId,
-        "검증 문항(Rule ID)": e.ruleId,
-        "Rawdata 대상 컬럼": e.rawCol,
-        "오류 유형": e.errorType,
-        "적용된 Base 조건": e.baseExpr,
-        "실제 입력값": e.actualVal,
-        "허용 기준": e.validCodes,
-        "참조 변수 실제값": e.refSummary
-      }));
-
-      const logicSheetRows = parsedRules.map(r => ({
-        "검증 단위 ID": r.ruleId,
-        "원본 문항": r.parentVar,
-        "판별 유형": r.qType,
-        "원본 문항 유형": r.qTypeRaw,
-        "결합 Base 조건": r.baseExpr,
-        "유효 보기 코드": formatValidSpec(r),
-        "매칭된 Rawdata 컬럼": r.matchedCols ? formatColSummary(r.matchedCols) : "미매칭",
-        "문항/행 설명": r.label
-      }));
-
-      const wsErrors = XLSX.utils.json_to_sheet(errorSheetRows.length ? errorSheetRows : [{ "결과": "발견된 오류가 없습니다." }]);
-      const wsLogic = XLSX.utils.json_to_sheet(logicSheetRows);
-
-      XLSX.utils.book_append_sheet(wb, wsErrors, "오류_상세_내역");
-      XLSX.utils.book_append_sheet(wb, wsLogic, "파싱된_로직_규칙");
-
+      const errorSheetRows = validationErrors.map(e => ({ "응답자 ID": e.respId, "검증 문항(Rule ID)": e.ruleId, "Rawdata 대상 컬럼": e.rawCol, "오류 유형": e.errorType, "적용된 Base 조건": e.baseExpr, "실제 입력값": e.actualVal, "허용 기준": e.validCodes, "참조 변수 실제값": e.refSummary }));
+      const logicSheetRows = parsedRules.map(r => ({ "검증 단위 ID": r.ruleId, "원본 문항": r.parentVar, "판별 유형": r.qType, "원본 문항 유형": r.qTypeRaw, "결합 Base 조건": r.baseExpr, "유효 보기 코드": formatValidSpec(r), "매칭된 Rawdata 컬럼": r.matchedCols ? formatColSummary(r.matchedCols) : "미매칭", "문항/행 설명": r.label }));
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(errorSheetRows.length ? errorSheetRows : [{ "결과": "발견된 오류가 없습니다." }]), "오류_상세_내역");
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(logicSheetRows), "파싱된_로직_규칙");
       XLSX.writeFile(wb, `Logic_Validation_Report_${new Date().toISOString().slice(0,10)}.xlsx`);
     }
 
-    function escapeRegex(str) {
-      return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    }
-
-    function escapeHtml(str) {
-      return String(str ?? "")
-        .replace(/&/g, "&amp;")
-        .replace(/</g, "&lt;")
-        .replace(/>/g, "&gt;")
-        .replace(/"/g, "&quot;");
-    }
+    function escapeRegex(str) { return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
+    function escapeHtml(str) { return String(str ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;"); }
   </script>
 </body>
 </html>
